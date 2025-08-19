@@ -194,6 +194,7 @@ available_setting = {
     "dify_max_retries": 3,                 # 最大重试次数
     "dify_retry_delay": 1.0,               # 重试延迟（秒）
     "dify_timeout": 30,                    # 请求超时时间（秒）
+    "dify_image_timeout": 180,             # 图片生成任务超时时间（秒）
     "dify_conversation_max_messages": 5,   # 会话最大消息数
     "dify_error_reply": "抱歉，我暂时遇到了一些问题，请您稍后重试~",  # 错误回复消息
 
@@ -300,21 +301,25 @@ def load_config():
     # 将json字符串反序列化为dict类型
     config = Config(json.loads(config_str))
 
-    # override config with environment variables.
-    # Some online deployment platforms (e.g. Railway) deploy project from github directly. So you shouldn't put your secrets like api key in a config file, instead use environment variables to override the default config.
-    for name, value in os.environ.items():
-        name = name.lower()
-        if name in available_setting:
-            logger.info("[INIT] override config by environ args: {}={}".format(name, value))
-            try:
-                config[name] = eval(value)
-            except:
-                if value == "false":
-                    config[name] = False
-                elif value == "true":
-                    config[name] = True
-                else:
-                    config[name] = value
+    # SGA-CoW: 禁用环境变量覆盖，完全使用config.json配置
+    # 这样可以通过替换config.json文件来对接不同平台，而不被环境变量干扰
+    #
+    # 原始的环境变量覆盖逻辑已被注释，如需启用请取消注释：
+    # for name, value in os.environ.items():
+    #     name = name.lower()
+    #     if name in available_setting:
+    #         logger.info("[INIT] override config by environ args: {}={}".format(name, value))
+    #         try:
+    #             config[name] = eval(value)
+    #         except:
+    #             if value == "false":
+    #                 config[name] = False
+    #             elif value == "true":
+    #                 config[name] = True
+    #             else:
+    #                 config[name] = value
+
+    logger.info("[INIT] 使用config.json配置，环境变量覆盖已禁用")
 
     if config.get("debug", False):
         logger.setLevel(logging.DEBUG)

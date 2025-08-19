@@ -57,16 +57,46 @@ class AzureVoice(Voice):
             logger.warn("AzureVoice init failed: %s, ignore " % e)
 
     def voiceToText(self, voice_file):
-        audio_config = speechsdk.AudioConfig(filename=voice_file)
-        speech_recognizer = speechsdk.SpeechRecognizer(speech_config=self.speech_config, audio_config=audio_config)
-        result = speech_recognizer.recognize_once()
-        if result.reason == speechsdk.ResultReason.RecognizedSpeech:
-            logger.info("[Azure] voiceToText voice file name={} text={}".format(voice_file, result.text))
-            reply = Reply(ReplyType.TEXT, result.text)
-        else:
-            cancel_details = result.cancellation_details
-            logger.error("[Azure] voiceToText error, result={}, errordetails={}".format(result, cancel_details))
-            reply = Reply(ReplyType.ERROR, "抱歉，语音识别失败")
+        try:
+            logger.info(f"[Azure] Starting voice recognition for file: {voice_file}")
+
+            # 检查文件是否存在
+            if not os.path.exists(voice_file):
+                logger.error(f"[Azure] Voice file not found: {voice_file}")
+                return Reply(ReplyType.ERROR, "语音文件不存在")
+
+            # 检查文件大小
+            file_size = os.path.getsize(voice_file)
+            logger.info(f"[Azure] Voice file size: {file_size} bytes")
+
+            if file_size == 0:
+                logger.error(f"[Azure] Voice file is empty: {voice_file}")
+                return Reply(ReplyType.ERROR, "语音文件为空")
+
+            # 检查API配置
+            if not self.api_key or not self.api_region:
+                logger.error("[Azure] API key or region not configured")
+                return Reply(ReplyType.ERROR, "Azure语音服务未配置")
+
+            audio_config = speechsdk.AudioConfig(filename=voice_file)
+            speech_recognizer = speechsdk.SpeechRecognizer(speech_config=self.speech_config, audio_config=audio_config)
+            result = speech_recognizer.recognize_once()
+
+            if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+                logger.info("[Azure] voiceToText voice file name={} text={}".format(voice_file, result.text))
+                reply = Reply(ReplyType.TEXT, result.text)
+            elif result.reason == speechsdk.ResultReason.NoMatch:
+                logger.warning("[Azure] No speech could be recognized")
+                reply = Reply(ReplyType.ERROR, "未识别到语音内容")
+            else:
+                cancel_details = result.cancellation_details
+                logger.error("[Azure] voiceToText error, result={}, errordetails={}".format(result, cancel_details))
+                if cancel_details.reason == speechsdk.CancellationReason.Error:
+                    logger.error(f"[Azure] Error details: {cancel_details.error_details}")
+                reply = Reply(ReplyType.ERROR, "抱歉，语音识别失败")
+        except Exception as e:
+            logger.error(f"[Azure] Exception in voiceToText: {e}")
+            reply = Reply(ReplyType.ERROR, "语音识别服务异常")
         return reply
 
     def textToVoice(self, text):

@@ -20,6 +20,7 @@ RUN apt-get update && \
     libjpeg-dev \
     libpng-dev \
     zlib1g-dev \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 

@@ -76,19 +76,62 @@ class DifyClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"[DIFY] Request failed: {e}")
             raise
-    
+
+    def _send_request_with_files(self, method: str, endpoint: str, data: Dict[str, Any], files: Dict[str, Any]) -> requests.Response:
+        """发送带文件的HTTP请求"""
+        url = f"{self.api_base}{endpoint}"
+
+        headers = {
+            'Authorization': f'Bearer {self.api_key}'
+            # 不设置Content-Type，让requests自动处理multipart/form-data
+        }
+
+        start_time = time.time()
+
+        try:
+            response = self.session.request(method, url, data=data, headers=headers, files=files, timeout=self.timeout)
+
+            # 记录请求时间
+            elapsed_time = time.time() - start_time
+            logger.debug(f"[DIFY] {method} {url} - Status: {response.status_code}, Time: {elapsed_time:.2f}s")
+
+            return response
+
+        except requests.exceptions.Timeout as e:
+            logger.error(f"[DIFY] Request timeout after {self.timeout}s: {e}")
+            raise
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"[DIFY] Connection error: {e}")
+            raise
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[DIFY] Request failed: {e}")
+            raise
+
     def file_upload(self, user: str, files: Dict[str, Any]) -> requests.Response:
         """上传文件到Dify"""
         endpoint = "/files/upload"
-        
-        # 文件上传不使用JSON Content-Type
-        headers = {
-            'Authorization': f'Bearer {self.api_key}'
+
+        data = {
+            'user': user
         }
-        
-        data = {'user': user}
-        
-        return self._send_request("POST", endpoint, headers=headers, data=data, files=files)
+
+        logger.info(f"[DIFY] Uploading file for user: {user}")
+        logger.info(f"[DIFY] Upload URL: {self.api_base}{endpoint}")
+
+        try:
+            response = self._send_request_with_files("POST", endpoint, data=data, files=files)
+            logger.info(f"[DIFY] File upload response status: {response.status_code}")
+
+            if response.status_code in [200, 201]:
+                logger.info(f"[DIFY] File upload successful")
+                return response
+            else:
+                logger.error(f"[DIFY] File upload failed - status: {response.status_code}, response: {response.text}")
+                return response
+
+        except Exception as e:
+            logger.error(f"[DIFY] File upload exception: {e}")
+            raise
 
     def health_check(self) -> bool:
         """检查Dify服务健康状态"""

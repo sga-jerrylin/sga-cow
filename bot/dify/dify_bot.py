@@ -36,7 +36,7 @@ class DifyBot(Bot):
         self.retry_config = {
             'max_retries': conf().get("dify_max_retries", 3),
             'retry_delay': conf().get("dify_retry_delay", 1.0),
-            'timeout': conf().get("dify_timeout", 30)
+            'timeout': conf().get("dify_timeout", 120)  # 默认120秒，支持复杂任务
         }
 
     def reply(self, query, context: Context=None):
@@ -77,6 +77,8 @@ class DifyBot(Bot):
             logger.debug(f"[DIFY] Session user and room info - user_id: {session.get_user_id()}, user_name: {session.get_user_name()}, room_id: {session.get_room_id()}, room_name: {session.get_room_name()}")
             logger.debug(f"[DIFY] session={session} query={query}")
 
+
+
             reply, err = self._reply(query, session, context)
             if err != None:
                 dify_error_reply = conf().get("dify_error_reply", None)
@@ -106,6 +108,18 @@ class DifyBot(Bot):
     def _get_dify_conf(self, context: Context, key, default=None):
         return context.get(key, conf().get(key, default))
 
+    def _get_timeout_for_query(self, query: str, context: Context) -> int:
+        """根据查询内容和上下文确定超时时间"""
+        # 图片生成相关的关键词
+        image_keywords = ['生成', '画', '图片', '图像', '海报', '图表', 'chart', '绘制', '制作图', '创建图']
+
+        # 检查是否是图片生成任务
+        if any(keyword in query.lower() for keyword in image_keywords):
+            return self._get_dify_conf(context, "dify_image_timeout", 180)
+
+        # 默认超时时间
+        return self.retry_config['timeout']
+
     def _reply(self, query: str, session: DifySession, context: Context):
         try:
             session.count_user_message() # 限制一个conversation中消息数，防止conversation过长
@@ -120,9 +134,20 @@ class DifyBot(Bot):
 
             dify_app_type = self._get_dify_conf(context, "dify_app_type", 'chatbot')
 
+            # 根据任务类型选择超时时间
+            timeout = self._get_timeout_for_query(query, context)
+
             # 性能优化：使用线程池异步处理
             future = self.executor.submit(self._handle_request_with_retry, dify_app_type, query, session, context)
-            result, error = future.result(timeout=self.retry_config['timeout'])
+            try:
+                result, error = future.result(timeout=timeout)
+            except TimeoutError:
+                logger.warning(f"[DIFY] Request timeout after {timeout} seconds for query: {query[:50]}...")
+                # 取消任务
+                future.cancel()
+                # 返回友好的超时消息
+                timeout_msg = f"处理您的请求需要更多时间（超过{timeout}秒），请稍后重试或尝试简化您的问题。"
+                return None, timeout_msg
 
             # 缓存结果
             if cache_key and result:
@@ -139,7 +164,10 @@ class DifyBot(Bot):
         except Exception as e:
             error_info = f"[DIFY] Exception: {e}"
             logger.exception(error_info)
-            return None, UNKNOWN_ERROR_MSG
+            # 使用配置的错误回复或默认消息
+            dify_error_reply = conf().get("dify_error_reply", None)
+            error_msg = dify_error_reply if dify_error_reply else UNKNOWN_ERROR_MSG
+            return None, error_msg
 
     def _handle_chatbot(self, query: str, session: DifySession, context: Context):
         api_key = self._get_dify_conf(context, "dify_api_key", '')
@@ -181,7 +209,9 @@ class DifyBot(Bot):
         logger.debug("[DIFY] usage {}".format(rsp_data.get('metadata', {}).get('usage', 0)))
 
         answer = rsp_data['answer']
+        logger.info(f"[DIFY] Raw answer from Dify: {repr(answer)}")
         parsed_content = parse_markdown_text(answer)
+        logger.info(f"[DIFY] Parsed content: {parsed_content}")
 
         # {"answer": "![image](/files/tools/dbf9cd7c-2110-4383-9ba8-50d9fd1a4815.png?timestamp=1713970391&nonce=0d5badf2e39466042113a4ba9fd9bf83&sign=OVmdCxCEuEYwc9add3YNFFdUpn4VdFKgl84Cg54iLnU=)"}
         at_prefix = ""
@@ -189,25 +219,31 @@ class DifyBot(Bot):
         is_group = context.get("isgroup", False)
         if is_group:
             at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
+        logger.info(f"[DIFY] Processing {len(parsed_content)} parsed items")
         for item in parsed_content[:-1]:
+            logger.info(f"[DIFY] Processing item: {item}")
             reply = None
             if item['type'] == 'text':
                 content = at_prefix + item['content']
                 reply = Reply(ReplyType.TEXT, content)
             elif item['type'] == 'image':
                 image_url = self._fill_file_base_url(item['content'])
+                logger.info(f"[DIFY] Processing image item: {image_url}")
                 image = self._download_image(image_url)
                 if image:
+                    logger.info(f"[DIFY] Image downloaded successfully, creating IMAGE reply")
                     reply = Reply(ReplyType.IMAGE, image)
                 else:
-                    reply = Reply(ReplyType.TEXT, f"图片链接：{image_url}")
+                    logger.warning(f"[DIFY] Image download failed, falling back to text link: {image_url}")
+                    reply = Reply(ReplyType.TEXT, image_url)  # 不带前缀，直接返回链接
             elif item['type'] == 'file':
                 file_url = self._fill_file_base_url(item['content'])
                 file_path = self._download_file(file_url)
                 if file_path:
                     reply = Reply(ReplyType.FILE, file_path)
                 else:
-                    reply = Reply(ReplyType.TEXT, f"文件链接：{file_url}")
+                    # 对于不支持下载的文件，直接返回链接，不带括号
+                    reply = Reply(ReplyType.TEXT, file_url)
             logger.debug(f"[DIFY] reply={reply}")
             if reply and channel:
                 channel.send(reply, context)
@@ -221,21 +257,25 @@ class DifyBot(Bot):
             if is_group:
                 at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
                 content = at_prefix + content
-            final_reply = Reply(ReplyType.TEXT, final_item['content'])
+            final_reply = Reply(ReplyType.TEXT, content)
         elif final_item['type'] == 'image':
             image_url = self._fill_file_base_url(final_item['content'])
+            logger.info(f"[DIFY] Processing final image item: {image_url}")
             image = self._download_image(image_url)
             if image:
+                logger.info(f"[DIFY] Final image downloaded successfully, creating IMAGE reply")
                 final_reply = Reply(ReplyType.IMAGE, image)
             else:
-                final_reply = Reply(ReplyType.TEXT, f"图片链接：{image_url}")
+                logger.warning(f"[DIFY] Final image download failed, falling back to text link: {image_url}")
+                final_reply = Reply(ReplyType.TEXT, image_url)  # 不带前缀，直接返回链接
         elif final_item['type'] == 'file':
             file_url = self._fill_file_base_url(final_item['content'])
             file_path = self._download_file(file_url)
             if file_path:
                 final_reply = Reply(ReplyType.FILE, file_path)
             else:
-                final_reply = Reply(ReplyType.TEXT, f"文件链接：{file_url}")
+                # 对于不支持下载的文件，直接返回链接，不带括号
+                final_reply = Reply(ReplyType.TEXT, file_url)
 
         # 设置dify conversation_id, 依靠dify管理上下文
         if session.get_conversation_id() == '':
@@ -243,22 +283,109 @@ class DifyBot(Bot):
 
         return final_reply, None
 
-    def _download_file(self, url):
+    def _is_downloadable_file(self, url):
+        """判断文件是否应该下载（图片和音频文件）"""
         try:
-            response = requests.get(url)
+            parsed_url = urlparse(url)
+            url_path = unquote(parsed_url.path).lower()
+
+            # 支持下载的文件扩展名
+            downloadable_extensions = {
+                # 图片格式
+                '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg',
+                # 音频格式
+                '.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.wma'
+            }
+
+            for ext in downloadable_extensions:
+                if url_path.endswith(ext):
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"[DIFY] Error checking file type for {url}: {e}")
+            return False
+
+    def _download_file(self, url):
+        """只下载图片和音频文件，其他文件返回None"""
+        if not self._is_downloadable_file(url):
+            logger.info(f"[DIFY] File type not supported for download: {url}")
+            return None
+
+        try:
+            logger.info(f"[DIFY] Starting file download from {url}")
+            response = requests.get(url, timeout=self.retry_config['timeout'])
             response.raise_for_status()
             parsed_url = urlparse(url)
-            logger.debug(f"Downloading file from {url}")
             url_path = unquote(parsed_url.path)
             # 从路径中提取文件名
             file_name = url_path.split('/')[-1]
-            logger.debug(f"Saving file as {file_name}")
+            if not file_name:
+                file_name = "download_file"
+            logger.info(f"[DIFY] Saving file as {file_name}")
             file_path = os.path.join(TmpDir().path(), file_name)
             with open(file_path, 'wb') as file:
                 file.write(response.content)
+            file_size = os.path.getsize(file_path)
+            logger.info(f"[DIFY] File downloaded successfully: {file_path}, size: {file_size} bytes")
             return file_path
         except Exception as e:
-            logger.error(f"Error downloading {url}: {e}")
+            logger.error(f"[DIFY] Error downloading file from {url}: {e}")
+            return None
+
+    def _download_image(self, url):
+        """下载图片并返回BytesIO对象，支持重试机制和防盗链处理"""
+        max_attempts = 3
+
+        # 不同的请求头策略，用于绕过防盗链
+        headers_strategies = [
+            {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache',
+            },
+            {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://www.alipay.com/',
+                'Accept': 'image/*,*/*;q=0.8',
+            },
+            {
+                'User-Agent': 'curl/7.68.0',
+                'Accept': '*/*',
+            }
+        ]
+
+        for attempt in range(max_attempts):
+            # 选择请求头策略
+            headers = headers_strategies[attempt % len(headers_strategies)]
+
+            try:
+                logger.info(f"[DIFY] Starting image download from {url} (attempt {attempt + 1}/{max_attempts})")
+                logger.debug(f"[DIFY] Using headers: {headers}")
+
+                pic_res = requests.get(url, headers=headers, stream=True, timeout=self.retry_config['timeout'])
+                pic_res.raise_for_status()
+
+                image_storage = io.BytesIO()
+                size = 0
+                for block in pic_res.iter_content(1024):
+                    size += len(block)
+                    image_storage.write(block)
+
+                logger.info(f"[DIFY] Image download success, size={size}, img_url={url}")
+                image_storage.seek(0)
+                return image_storage
+
+            except Exception as e:
+                logger.warning(f"[DIFY] Image download attempt {attempt + 1} failed with headers strategy {attempt % len(headers_strategies) + 1}: {e}")
+                if attempt == max_attempts - 1:
+                    logger.error(f"[DIFY] All {max_attempts} attempts failed for image download from {url}")
+                    return None
+                # 短暂等待后重试
+                import time
+                time.sleep(1)
         return None
 
     def _download_image(self, url):
@@ -371,16 +498,32 @@ class DifyBot(Bot):
                         channel.send(reply, context)
                     elif msg['type'] == 'message_file':
                         url = self._fill_file_base_url(msg['content']['url'])
-                        reply = Reply(ReplyType.IMAGE_URL, url)
+                        # 根据文件类型决定处理方式
+                        if self._is_downloadable_file(url):
+                            # 图片和音频文件使用IMAGE_URL类型，会被下载
+                            reply = Reply(ReplyType.IMAGE_URL, url)
+                        else:
+                            # 其他文件直接发送链接，不带括号
+                            reply = Reply(ReplyType.TEXT, url)
                         thread = threading.Thread(target=channel.send, args=(reply, context))
                         thread.start()
                 final_msg = msgs[-1]
                 reply = None
                 if final_msg['type'] == 'agent_message':
-                    reply = Reply(ReplyType.TEXT, final_msg['content'])
+                    content = final_msg['content']
+                    if is_group:
+                        at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
+                        content = at_prefix + content
+                    reply = Reply(ReplyType.TEXT, content)
                 elif final_msg['type'] == 'message_file':
                     url = self._fill_file_base_url(final_msg['content']['url'])
-                    reply = Reply(ReplyType.IMAGE_URL, url)
+                    # 根据文件类型决定处理方式
+                    if self._is_downloadable_file(url):
+                        # 图片和音频文件使用IMAGE_URL类型，会被下载
+                        reply = Reply(ReplyType.IMAGE_URL, url)
+                    else:
+                        # 其他文件直接发送链接，不带括号
+                        reply = Reply(ReplyType.TEXT, url)
                 if session.get_conversation_id() == '':
                     session.set_conversation_id(conversation_id)
                 return reply, None
@@ -460,45 +603,82 @@ class DifyBot(Bot):
         img_cache = memory.USER_IMAGE_CACHE.get(session_id)
         if not img_cache or not self._get_dify_conf(context, "image_recognition", False):
             return None
+
+        logger.info(f"[DIFY] Processing image upload for session: {session_id}")
+
         # 清理图片缓存
         memory.USER_IMAGE_CACHE[session_id] = None
         api_key = self._get_dify_conf(context, "dify_api_key", '')
         api_base = self._get_dify_conf(context, "dify_api_base", "https://api.dify.ai/v1")
+
+        if not api_key:
+            logger.error("[DIFY] No API key configured for image upload")
+            return None
+
         dify_client = DifyClient(api_key, api_base)
         msg = img_cache.get("msg")
         path = img_cache.get("path")
-        msg.prepare()
 
-        with open(path, 'rb') as file:
-            file_name = os.path.basename(path)
-            file_type, _ = mimetypes.guess_type(file_name)
-            files = {
-                'file': (file_name, file, file_type)
-            }
-            response = dify_client.file_upload(user=session.get_user(), files=files)
+        if not path:
+            logger.error(f"[DIFY] No image path in cache")
+            return None
 
-        if response.status_code != 200 and response.status_code != 201:
-            error_info = f"[DIFY] response text={response.text} status_code={response.status_code} when upload file"
-            logger.warning(error_info)
-            return None, error_info
-        # {
-        #     'id': 'f508165a-10dc-4256-a7be-480301e630e6',
-        #     'name': '0.png',
-        #     'size': 17023,
-        #     'extension': 'png',
-        #     'mime_type': 'image/png',
-        #     'created_by': '0d501495-cfd4-4dd4-a78b-a15ed4ed77d1',
-        #     'created_at': 1722781568
-        # }
-        file_upload_data = response.json()
-        logger.debug("[DIFY] upload file {}".format(file_upload_data))
-        return [
-            {
-                "type": "image",
-                "transfer_method": "local_file",
-                "upload_file_id": file_upload_data['id']
-            }
-        ]
+        # 确保图片文件已下载
+        if msg and hasattr(msg, 'prepare'):
+            logger.info(f"[DIFY] Preparing image download...")
+            msg.prepare()
+
+        # 等待文件下载完成，最多等待10秒
+        import time
+        max_wait = 10
+        wait_time = 0
+        while not os.path.exists(path) and wait_time < max_wait:
+            logger.info(f"[DIFY] Waiting for image download... ({wait_time}s)")
+            time.sleep(1)
+            wait_time += 1
+
+        if not os.path.exists(path):
+            logger.error(f"[DIFY] Image file not found after waiting: {path}")
+            return None
+
+        logger.info(f"[DIFY] Image file ready: {path}")
+
+        try:
+            with open(path, 'rb') as file:
+                file_name = os.path.basename(path)
+                file_type, _ = mimetypes.guess_type(file_name)
+                if not file_type:
+                    file_type = 'image/jpeg'  # 默认类型
+
+                logger.info(f"[DIFY] Uploading file: {file_name}, type: {file_type}")
+
+                files = {
+                    'file': (file_name, file, file_type)
+                }
+                response = dify_client.file_upload(user=session.get_user(), files=files)
+
+            if response.status_code != 200 and response.status_code != 201:
+                error_info = f"[DIFY] File upload failed - status: {response.status_code}, response: {response.text}"
+                logger.warning(error_info)
+                return None
+
+            try:
+                file_upload_data = response.json()
+                logger.info(f"[DIFY] File uploaded successfully: {file_upload_data}")
+                return [
+                    {
+                        "type": "image",
+                        "transfer_method": "local_file",
+                        "upload_file_id": file_upload_data['id']
+                    }
+                ]
+            except Exception as e:
+                logger.error(f"[DIFY] Failed to parse upload response: {e}")
+                return None
+
+        except Exception as e:
+            logger.error(f"[DIFY] Exception during file upload: {e}")
+            return None
 
     def _fill_file_base_url(self, url: str):
         if url.startswith("https://") or url.startswith("http://"):
@@ -595,8 +775,9 @@ class DifyBot(Bot):
             })
 
     def _append_message_file(self, event: dict, merged_message: list):
-        if event.get('type') != 'image':
-            logger.warning("[DIFY] unsupported message file type: {}".format(event))
+        # 支持所有文件类型，但只下载图片和音频
+        file_type = event.get('type', 'unknown')
+        logger.info(f"[DIFY] Processing message file type: {file_type}")
         merged_message.append({
             'type': 'message_file',
             'content': event,
@@ -822,7 +1003,13 @@ class DifyBot(Bot):
                     self.executor.submit(channel.send, reply, context)
             elif msg['type'] == 'message_file':
                 url = self._fill_file_base_url(msg['content']['url'])
-                reply = Reply(ReplyType.IMAGE_URL, url)
+                # 根据文件类型决定处理方式
+                if self._is_downloadable_file(url):
+                    # 图片和音频文件使用IMAGE_URL类型，会被下载
+                    reply = Reply(ReplyType.IMAGE_URL, url)
+                else:
+                    # 其他文件直接发送链接，不带括号
+                    reply = Reply(ReplyType.TEXT, url)
                 if channel:
                     self.executor.submit(channel.send, reply, context)
 
@@ -830,10 +1017,20 @@ class DifyBot(Bot):
         final_msg = msgs[-1]
         final_reply = None
         if final_msg['type'] == 'agent_message':
-            final_reply = Reply(ReplyType.TEXT, final_msg['content'])
+            content = final_msg['content']
+            if is_group:
+                at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
+                content = at_prefix + content
+            final_reply = Reply(ReplyType.TEXT, content)
         elif final_msg['type'] == 'message_file':
             url = self._fill_file_base_url(final_msg['content']['url'])
-            final_reply = Reply(ReplyType.IMAGE_URL, url)
+            # 根据文件类型决定处理方式
+            if self._is_downloadable_file(url):
+                # 图片和音频文件使用IMAGE_URL类型，会被下载
+                final_reply = Reply(ReplyType.IMAGE_URL, url)
+            else:
+                # 其他文件直接发送链接，不带括号
+                final_reply = Reply(ReplyType.TEXT, url)
 
         if session.get_conversation_id() == '':
             session.set_conversation_id(conversation_id)
@@ -842,23 +1039,28 @@ class DifyBot(Bot):
 
     def _create_reply_from_item(self, item: dict, at_prefix: str = "") -> Optional[Reply]:
         """从解析项创建回复对象"""
+        logger.info(f"[DIFY] _create_reply_from_item called with item: {item}")
         if item['type'] == 'text':
             content = at_prefix + item['content']
             return Reply(ReplyType.TEXT, content)
         elif item['type'] == 'image':
             image_url = self._fill_file_base_url(item['content'])
+            logger.info(f"[DIFY] Processing image item: {image_url}")
             image = self._download_image(image_url)
             if image:
+                logger.info(f"[DIFY] Image downloaded successfully, creating IMAGE reply")
                 return Reply(ReplyType.IMAGE, image)
             else:
-                return Reply(ReplyType.TEXT, f"图片链接：{image_url}")
+                logger.warning(f"[DIFY] Image download failed, falling back to text link: {image_url}")
+                return Reply(ReplyType.TEXT, image_url)  # 不带"图片链接："前缀，直接返回链接
         elif item['type'] == 'file':
             file_url = self._fill_file_base_url(item['content'])
             file_path = self._download_file(file_url)
             if file_path:
                 return Reply(ReplyType.FILE, file_path)
             else:
-                return Reply(ReplyType.TEXT, f"文件链接：{file_url}")
+                # 对于不支持下载的文件，直接返回链接，不带括号
+                return Reply(ReplyType.TEXT, file_url)
         return None
 
     def _is_empty_response(self, response_data: Any) -> bool:

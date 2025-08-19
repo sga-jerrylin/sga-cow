@@ -324,3 +324,7 @@ class WeworkChannel(ChatChannel):
             reply.content = os.path.join(current_dir, "tmp", voice_file)
             wework.send_file(receiver, reply.content)
             logger.info("[WX] sendFile={}, receiver={}".format(reply.content, receiver))
+        elif reply.type == ReplyType.FILE:  # 文件发送
+            file_path = reply.content
+            wework.send_file(receiver, file_path)
+            logger.info("[WX] sendFile={}, receiver={}".format(file_path, receiver))

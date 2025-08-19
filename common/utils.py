@@ -76,3 +76,84 @@ def remove_markdown_symbol(text: str):
     if not text:
         return text
     return re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+
+
+def parse_markdown_text(text: str):
+    """
+    解析Markdown文本，提取文本、图片、文件等内容
+    返回格式: [
+        {'type': 'text', 'content': '文本内容'},
+        {'type': 'image', 'content': '图片URL'},
+        {'type': 'file', 'content': '文件URL'},
+        ...
+    ]
+    """
+    if not text:
+        return [{'type': 'text', 'content': ''}]
+
+    result = []
+    remaining_text = text
+
+    # 定义文件扩展名模式（用于识别文件链接）
+    file_extensions = r'\.(pdf|doc|docx|xlsx?|pptx?|txt|html?|zip|rar|7z|tar|gz|csv|json|xml)(\?[^\)]*)?$'
+
+    # 提取图片 ![alt](url)
+    image_pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
+    images = re.findall(image_pattern, remaining_text)
+    for alt, url in images:
+        result.append({'type': 'image', 'content': url})
+        # 从文本中移除已处理的图片
+        remaining_text = remaining_text.replace(f'![{alt}]({url})', '', 1)
+
+    # 提取链接 [text](url)
+    link_pattern = r'\[([^\]]+)\]\(([^)]+)\)'
+    links = re.findall(link_pattern, remaining_text)
+    for link_text, url in links:
+        # 检查是否为文件链接
+        if re.search(file_extensions, url, re.IGNORECASE):
+            result.append({'type': 'file', 'content': url})
+        else:
+            # 普通链接保留在文本中，但移除Markdown格式
+            remaining_text = remaining_text.replace(f'[{link_text}]({url})', link_text, 1)
+            continue
+        # 从文本中移除已处理的文件链接
+        remaining_text = remaining_text.replace(f'[{link_text}]({url})', '', 1)
+
+    # 处理剩余的文本内容
+    if remaining_text.strip():
+        # 移除其他Markdown格式
+        clean_text = remaining_text
+        # 移除粗体
+        clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
+        # 移除斜体
+        clean_text = re.sub(r'\*(.*?)\*', r'\1', clean_text)
+        # 移除代码块
+        clean_text = re.sub(r'```.*?```', '', clean_text, flags=re.DOTALL)
+        # 移除行内代码
+        clean_text = re.sub(r'`([^`]+)`', r'\1', clean_text)
+        # 清理多余的空白
+        clean_text = re.sub(r'\n\s*\n', '\n\n', clean_text.strip())
+
+        if clean_text.strip():
+            result.insert(0, {'type': 'text', 'content': clean_text})
+
+    # 如果没有任何内容，返回空文本
+    if not result:
+        result = [{'type': 'text', 'content': ''}]
+
+    return result
+
+
+def print_red(text: str):
+    """
+    打印红色文本（用于错误信息）
+    """
+    # ANSI颜色代码：红色
+    RED = '\033[91m'
+    RESET = '\033[0m'
+
+    # 同时输出到日志和控制台
+    logger.error(text)
+    print(f"{RED}{text}{RESET}")
+
+    return text

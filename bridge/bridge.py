@@ -51,9 +51,13 @@ class Bridge(object):
 
             if model_type in [const.MODELSCOPE]:
                 self.btype["chat"] = const.MODELSCOPE
-            
+
             if model_type in ["abab6.5-chat"]:
                 self.btype["chat"] = const.MiniMax
+
+            # SGA-CoW: 添加Dify支持
+            if model_type in ["dify", const.DIFY]:
+                self.btype["chat"] = const.DIFY
 
             if conf().get("use_linkai") and conf().get("linkai_api_key"):
                 self.btype["chat"] = const.LINKAI
