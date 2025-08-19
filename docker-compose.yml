@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  sga-cow:
+    image: sga-cow:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sga-cow
+    restart: unless-stopped
+    ports:
+      - "9899:9899"  # Web端口
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./logs:/app/logs
+      - ./tmp:/app/tmp
+    environment:
+      # 基础配置
+      - CHANNEL_TYPE=wechatcom_app
+      - MODEL=dify
+      
+      # Dify配置
+      - DIFY_API_KEY=${DIFY_API_KEY:-}
+      - DIFY_API_BASE=${DIFY_API_BASE:-https://api.dify.ai/v1}
+      - DIFY_APP_TYPE=${DIFY_APP_TYPE:-chatbot}
+      - DIFY_MAX_WORKERS=${DIFY_MAX_WORKERS:-10}
+      - DIFY_MAX_RETRIES=${DIFY_MAX_RETRIES:-3}
+      - DIFY_TIMEOUT=${DIFY_TIMEOUT:-30}
+      
+      # 企业微信配置
+      - WECHATCOM_CORP_ID=${WECHATCOM_CORP_ID:-}
+      - WECHATCOMAPP_SECRET=${WECHATCOMAPP_SECRET:-}
+      - WECHATCOMAPP_AGENT_ID=${WECHATCOMAPP_AGENT_ID:-}
+      - WECHATCOMAPP_TOKEN=${WECHATCOMAPP_TOKEN:-}
+      - WECHATCOMAPP_AES_KEY=${WECHATCOMAPP_AES_KEY:-}
+      
+      # 其他配置
+      - DEBUG=${DEBUG:-false}
+      - HOT_RELOAD=${HOT_RELOAD:-false}
+      - SINGLE_CHAT_PREFIX=${SINGLE_CHAT_PREFIX:-["bot", "@bot"]}
+      - GROUP_CHAT_PREFIX=${GROUP_CHAT_PREFIX:-["@bot"]}
+      
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:9899/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    networks:
+      - sga-cow-network
+
+networks:
+  sga-cow-network:
+    driver: bridge
+
+volumes:
+  logs:
+  tmp:

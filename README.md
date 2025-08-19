@@ -102,6 +102,70 @@ vim config.json
 python app.py
 ```
 
+## 🐳 Docker部署
+
+使用Docker部署无需下载源码和安装依赖，只需要获取配置文件并启动容器即可。
+
+### 前提条件
+
+安装Docker和Docker Compose，安装成功后执行以下命令验证：
+```bash
+docker --version
+docker-compose --version
+```
+
+### 快速部署
+
+```bash
+# 1. 下载docker-compose.yml文件
+wget https://raw.githubusercontent.com/sga-jerrylin/sga-cow/master/docker-compose.yml
+
+# 2. 下载环境变量配置模板
+wget https://raw.githubusercontent.com/sga-jerrylin/sga-cow/master/.env.example -O .env
+
+# 3. 编辑配置文件（重要！）
+vim .env  # 填入Dify API Key和企业微信配置
+
+# 4. 启动容器
+docker-compose up -d
+```
+
+### 必要配置
+
+在 `.env` 文件中填入以下配置：
+
+```bash
+# Dify配置
+DIFY_API_KEY=your-dify-api-key-here
+DIFY_API_BASE=https://api.dify.ai/v1
+DIFY_APP_TYPE=chatbot
+
+# 企业微信配置
+WECHATCOM_CORP_ID=your-corp-id-here
+WECHATCOMAPP_SECRET=your-app-secret-here
+WECHATCOMAPP_AGENT_ID=your-agent-id-here
+WECHATCOMAPP_TOKEN=your-token-here
+WECHATCOMAPP_AES_KEY=your-aes-key-here
+```
+
+### 管理命令
+
+```bash
+# 查看服务状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f
+
+# 重启服务
+docker-compose restart
+
+# 停止服务
+docker-compose down
+```
+
+详细的Docker部署说明请参考：[Docker部署指南](DOCKER_DEPLOY.md)
+
 # 📊 性能对比
 
 ## 响应速度测试

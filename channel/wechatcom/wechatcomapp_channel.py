@@ -6,7 +6,14 @@ import threading
 import queue
 
 import requests
-import web
+try:
+    import web
+except ImportError:
+    # 如果web.py不可用，使用兼容模块
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    import web_compat as web
 from wechatpy.enterprise import create_reply, parse_message
 from wechatpy.enterprise.crypto import WeChatCrypto
 from wechatpy.enterprise.exceptions import InvalidCorpIdException
@@ -21,7 +28,17 @@ from common.log import logger
 from common.singleton import singleton
 from common.utils import compress_imgfile, fsize, split_string_by_utf8_length, convert_webp_to_png, remove_markdown_symbol
 from config import conf, subscribe_msg
-from voice.audio_convert import any_to_amr, split_audio
+try:
+    from voice.audio_convert import any_to_amr, split_audio
+    AUDIO_SUPPORT = True
+except ImportError as e:
+    logger.warning(f"[wechatcom] Audio conversion not available: {e}")
+    AUDIO_SUPPORT = False
+    # 提供空的替代函数
+    def any_to_amr(file_path):
+        return file_path
+    def split_audio(file_path, max_duration):
+        return [file_path]
 
 MAX_UTF8_LEN = 2048
 

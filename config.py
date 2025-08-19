@@ -184,13 +184,25 @@ available_setting = {
     "Minimax_base_url": "",
     "web_port": 9899,
 
+    # Dify 基础配置
+    "dify_api_key": "",                    # Dify API密钥
+    "dify_api_base": "https://api.dify.ai/v1",  # Dify API基础URL，支持自定义
+    "dify_app_type": "chatbot",            # Dify应用类型: chatbot, agent, workflow
+
     # Dify 性能优化配置
-    "dify_max_workers": 10,  # Dify请求线程池大小
-    "dify_max_retries": 3,   # 最大重试次数
-    "dify_retry_delay": 1.0, # 重试延迟（秒）
-    "dify_timeout": 30,      # 请求超时时间（秒）
-    "dify_conversation_max_messages": 5,  # 会话最大消息数
+    "dify_max_workers": 10,                # Dify请求线程池大小
+    "dify_max_retries": 3,                 # 最大重试次数
+    "dify_retry_delay": 1.0,               # 重试延迟（秒）
+    "dify_timeout": 30,                    # 请求超时时间（秒）
+    "dify_conversation_max_messages": 5,   # 会话最大消息数
     "dify_error_reply": "抱歉，我暂时遇到了一些问题，请您稍后重试~",  # 错误回复消息
+
+    # 图像识别配置
+    "image_recognition": False,            # 是否开启图像识别
+
+    # 其他可能缺失的配置
+    "group_at_off": False,                 # 群聊时是否关闭@功能
+    "media_send_count": [],                # 媒体发送计数
 }
 
 
