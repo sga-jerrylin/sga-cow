@@ -183,6 +183,14 @@ available_setting = {
     "Minimax_group_id": "",
     "Minimax_base_url": "",
     "web_port": 9899,
+
+    # Dify 性能优化配置
+    "dify_max_workers": 10,  # Dify请求线程池大小
+    "dify_max_retries": 3,   # 最大重试次数
+    "dify_retry_delay": 1.0, # 重试延迟（秒）
+    "dify_timeout": 30,      # 请求超时时间（秒）
+    "dify_conversation_max_messages": 5,  # 会话最大消息数
+    "dify_error_reply": "抱歉，我暂时遇到了一些问题，请您稍后重试~",  # 错误回复消息
 }
 
 

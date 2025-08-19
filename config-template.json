@@ -33,5 +33,16 @@
   "subscribe_msg": "感谢您的关注！\n这里是AI智能助手，可以自由对话。\n支持语音对话。\n支持图片输入。\n支持图片输出，画字开头的消息将按要求创作图片。\n支持tool、角色扮演和文字冒险等丰富的插件。\n输入{trigger_prefix}#help 查看详细指令。",
   "use_linkai": false,
   "linkai_api_key": "",
-  "linkai_app_code": ""
+  "linkai_app_code": "",
+
+  "dify_api_key": "",
+  "dify_api_base": "https://api.dify.ai/v1",
+  "dify_app_type": "chatbot",
+  "dify_max_workers": 10,
+  "dify_max_retries": 3,
+  "dify_retry_delay": 1.0,
+  "dify_timeout": 30,
+  "dify_conversation_max_messages": 5,
+  "dify_error_reply": "抱歉，我暂时遇到了一些问题，请您稍后重试~",
+  "image_recognition": false
 }

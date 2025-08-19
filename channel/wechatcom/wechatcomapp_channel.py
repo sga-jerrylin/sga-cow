@@ -2,6 +2,8 @@
 import io
 import os
 import time
+import threading
+import queue
 
 import requests
 import web
@@ -42,6 +44,10 @@ class WechatComAppChannel(ChatChannel):
         self.crypto = WeChatCrypto(self.token, self.aes_key, self.corp_id)
         self.client = WechatComAppClient(self.corp_id, self.secret)
 
+        # 为每个接收者创建消息发送队列，确保顺序发送
+        self.send_queues = {}
+        self.send_locks = {}
+
     def startup(self):
         # start message listener
         urls = ("/wxcomapp/?", "channel.wechatcom.wechatcomapp_channel.Query")
@@ -56,10 +62,10 @@ class WechatComAppChannel(ChatChannel):
             texts = split_string_by_utf8_length(reply_text, MAX_UTF8_LEN)
             if len(texts) > 1:
                 logger.info("[wechatcom] text too long, split into {} parts".format(len(texts)))
-            for i, text in enumerate(texts):
-                self.client.message.send_text(self.agent_id, receiver, text)
-                if i != len(texts) - 1:
-                    time.sleep(0.5)  # 休眠0.5秒，防止发送过快乱序
+                # 使用顺序发送机制
+                self._send_texts_in_order(receiver, texts)
+            else:
+                self.client.message.send_text(self.agent_id, receiver, texts[0])
             logger.info("[wechatcom] Do send text to {}: {}".format(receiver, reply_text))
         elif reply.type == ReplyType.VOICE:
             try:
@@ -130,6 +136,35 @@ class WechatComAppChannel(ChatChannel):
                 return
             self.client.message.send_image(self.agent_id, receiver, response["media_id"])
             logger.info("[wechatcom] sendImage, receiver={}".format(receiver))
+
+    def _send_texts_in_order(self, receiver, texts):
+        """按顺序发送多条文本消息，确保不乱序"""
+        # 为每个接收者创建独立的锁
+        if receiver not in self.send_locks:
+            self.send_locks[receiver] = threading.Lock()
+
+        def send_worker():
+            with self.send_locks[receiver]:
+                for i, text in enumerate(texts):
+                    try:
+                        # 添加序号前缀，确保用户能看到正确顺序
+                        if len(texts) > 1:
+                            prefixed_text = f"[{i+1}/{len(texts)}] {text}"
+                        else:
+                            prefixed_text = text
+
+                        self.client.message.send_text(self.agent_id, receiver, prefixed_text)
+                        logger.info(f"[wechatcom] Sent part {i+1}/{len(texts)} to {receiver}")
+
+                        # 发送间隔，防止过快
+                        if i < len(texts) - 1:
+                            time.sleep(0.8)  # 增加到0.8秒间隔
+                    except Exception as e:
+                        logger.error(f"[wechatcom] Failed to send part {i+1}/{len(texts)}: {e}")
+
+        # 在新线程中执行发送，避免阻塞主线程
+        thread = threading.Thread(target=send_worker, daemon=True)
+        thread.start()
 
 
 class Query:
