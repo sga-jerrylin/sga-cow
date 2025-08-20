@@ -1,0 +1,46 @@
+{
+  "channel_type": "wechatcom_app",     
+  "wechatcom_corp_id": "YOUR_CORP_ID",                      
+  "wechatcomapp_secret": "YOUR_APP_SECRET", 
+  "wechatcomapp_agent_id": "YOUR_AGENT_ID",      
+  "wechatcomapp_token": "YOUR_TOKEN",               
+  "wechatcomapp_aes_key": "YOUR_AES_KEY",
+  "wechatcomapp_port": 8081,       
+  "model": "dify",
+  "dify_api_base": "YOUR_DIFY_API_BASE",
+  "dify_api_key": "YOUR_DIFY_API_KEY",
+  "dify_app_type": "agent",
+  "dify_conversation_max_messages": 30,
+  "dify_timeout": 300,
+  "dify_image_timeout": 600,
+  "dify_error_reply": "我正在努力处理您的请求，请稍后重试~",
+  "voice_to_text": "azure",
+  "speech_recognition": true,
+  "group_speech_recognition": true,
+  "azure_voice_api_key": "YOUR_AZURE_API_KEY",
+  "azure_voice_region": "eastus",
+  "image_recognition": true,
+  "text_to_image": "dall-e-3",
+  "proxy": "",
+  "group_at_off": false,
+  "single_chat_prefix": [
+    ""
+  ],
+  "single_chat_reply_prefix": " ",
+  "group_chat_prefix": [
+    "@bot"
+  ],
+  "group_name_white_list": ["ALL_GROUP"],
+  "image_create_prefix": [
+    "画"
+  ],
+  "voice_reply_voice": false,
+  "conversation_max_tokens": "",
+  "expires_in_seconds": "",
+  "character_desc": "",
+  "group_welcome_msg": "",
+  "temperature": 0.3,
+  "use_linkai": false,
+  "linkai_api_key": "YOUR_LINKAI_API_KEY",
+  "linkai_app_code": ""
+}
