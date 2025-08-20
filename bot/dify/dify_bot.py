@@ -5,11 +5,12 @@ import mimetypes
 import threading
 import json
 import time
-import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, Dict, Any
+from typing import Optional, Any
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from urllib.parse import urlparse, unquote
 
 from bot.bot import Bot
@@ -36,7 +37,7 @@ class DifyBot(Bot):
         self.retry_config = {
             'max_retries': conf().get("dify_max_retries", 3),
             'retry_delay': conf().get("dify_retry_delay", 1.0),
-            'timeout': conf().get("dify_timeout", 120)  # 默认120秒，支持复杂任务
+            'timeout': conf().get("dify_timeout", 300)  # 默认300秒(5分钟)，给AI充足思考时间
         }
 
     def reply(self, query, context: Context=None):
@@ -136,7 +137,7 @@ class DifyBot(Bot):
 
         # 检查是否是图片生成任务
         if any(keyword in query.lower() for keyword in image_keywords):
-            return self._get_dify_conf(context, "dify_image_timeout", 180)
+            return self._get_dify_conf(context, "dify_image_timeout", 600)  # 图片生成10分钟
 
         # 默认超时时间
         return self.retry_config['timeout']
@@ -166,8 +167,11 @@ class DifyBot(Bot):
                 logger.warning(f"[DIFY] Request timeout after {timeout} seconds for query: {query[:50]}...")
                 # 取消任务
                 future.cancel()
-                # 返回友好的超时消息
-                timeout_msg = f"处理您的请求需要更多时间（超过{timeout}秒），请稍后重试或尝试简化您的问题。"
+                # 返回更友好的超时消息
+                if timeout >= 60:
+                    timeout_msg = "您的问题比较复杂，我需要更多时间来思考。请稍等片刻后重新提问，或者尝试将问题分解成几个简单的部分。"
+                else:
+                    timeout_msg = f"处理您的请求需要更多时间（超过{timeout}秒），请稍后重试或尝试简化您的问题。"
                 return None, timeout_msg
 
             # 缓存结果
@@ -888,7 +892,7 @@ class DifyBot(Bot):
 
         for attempt in range(self.retry_config['max_retries']):
             try:
-                if dify_app_type == 'chatbot' or dify_app_type == 'chatflow':
+                if dify_app_type == 'chatbot':
                     return self._handle_chatbot_optimized(query, session, context)
                 elif dify_app_type == 'agent':
                     return self._handle_agent_optimized(query, session, context)
@@ -910,22 +914,116 @@ class DifyBot(Bot):
                 else:
                     break
 
-        # 所有重试都失败了
-        error_info = f"[DIFY] All {self.retry_config['max_retries']} attempts failed. Last error: {last_error}"
+        # 所有重试都失败了，给用户发送积极的等待消息，然后在后台重试
+        logger.warning(f"[DIFY] All {self.retry_config['max_retries']} attempts failed. Sending positive message and retrying...")
+
+        # 发送积极的等待消息给用户
+        self._send_thinking_message(context)
+
+        logger.info(f"[DIFY] 🤔 已发送'正在思考'消息，开始后台重试")
+
+        try:
+            # 等待一段时间让系统稳定
+            time.sleep(3)
+
+            if dify_app_type == 'chatbot':
+                result, error = self._handle_chatbot_optimized(query, session, context)
+            elif dify_app_type == 'agent':
+                result, error = self._handle_agent_optimized(query, session, context)
+            elif dify_app_type == 'workflow':
+                result, error = self._handle_workflow(query, session, context)
+            else:
+                friendly_error_msg = "[DIFY] 请检查 config.json 中的 dify_app_type 设置，目前仅支持 agent, chatbot, chatflow, workflow"
+                return None, friendly_error_msg
+
+            if result:
+                logger.info(f"[DIFY] ✅ 后台重试成功！用户将收到正常回复")
+                return result, error
+            else:
+                logger.warning(f"[DIFY] ❌ 后台重试也失败了: {error}")
+
+        except Exception as e:
+            logger.error(f"[DIFY] 后台重试出现异常: {e}")
+
+        # 真正的最终失败 - 返回积极的消息
+        error_info = f"[DIFY] All attempts failed. Last error: {last_error}"
         logger.error(error_info)
-        return None, UNKNOWN_ERROR_MSG
+
+        # 返回积极正面的消息，不让用户感到系统有问题
+        positive_msg = "让我重新整理一下思路，稍后为您提供更准确的回答。您也可以尝试换个方式提问。"
+        return None, positive_msg
+
+    def _send_thinking_message(self, context: Context):
+        """发送积极的等待消息给用户"""
+        try:
+            channel = context.get("channel")
+            if channel:
+                is_group = context.get("isgroup", False)
+                thinking_messages = [
+                    "请耐心等待，我正在认真思考您的问题...",
+                    "让我仔细分析一下，马上为您提供回答...",
+                    "正在为您查找最准确的信息，请稍候...",
+                    "思考中...请给我一点时间整理答案..."
+                ]
+
+                # 随机选择一个积极的消息
+                import random
+                message = random.choice(thinking_messages)
+
+                if is_group:
+                    at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
+                    message = at_prefix + message
+
+                reply = Reply(ReplyType.TEXT, message)
+                # 异步发送，不阻塞主流程
+                self.executor.submit(channel.send, reply, context)
+                logger.info(f"[DIFY] 💭 已发送积极等待消息: {message[:20]}...")
+
+        except Exception as e:
+            logger.warning(f"[DIFY] 发送等待消息失败: {e}")
+
+    def _create_optimized_session(self):
+        """创建优化的HTTP会话，提升连接稳定性"""
+        session = requests.Session()
+
+        # 配置重试策略
+        retry_strategy = Retry(
+            total=3,  # 总重试次数
+            backoff_factor=1,  # 退避因子
+            status_forcelist=[429, 500, 502, 503, 504],  # 需要重试的状态码
+            allowed_methods=["HEAD", "GET", "POST"]  # 允许重试的方法
+        )
+
+        # 配置HTTP适配器
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=20,  # 连接池大小
+            pool_maxsize=20,  # 最大连接数
+            pool_block=False  # 非阻塞
+        )
+
+        # 为HTTP和HTTPS设置适配器
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
+        # 设置超时 - 给AI充足的思考时间
+        session.timeout = (60, 300)  # (连接超时60秒, 读取超时300秒/5分钟)
+
+        return session
 
     def _handle_chatbot_optimized(self, query: str, session: DifySession, context: Context):
-        """优化版本的chatbot处理，支持连接池和超时控制"""
+        """优化版本的chatbot处理，支持连接池、超时控制和媒体内容"""
+        logger.info("[DIFY] 🤖 ChatBot模式：使用blocking响应")
         api_key = self._get_dify_conf(context, "dify_api_key", '')
         api_base = self._get_dify_conf(context, "dify_api_base", "https://api.dify.ai/v1")
 
-        # 使用优化的HTTP会话
-        with requests.Session() as session_http:
+        # 使用优化的HTTP会话，提升连接稳定性
+        with self._create_optimized_session() as session_http:
             session_http.headers.update({
                 'Authorization': f'Bearer {api_key}',
                 'Content-Type': 'application/json'
             })
+            logger.info("[DIFY] 🔗 使用优化的连接池配置")
 
             chat_client = ChatClient(api_key, api_base)
             response_mode = 'blocking'
@@ -958,15 +1056,17 @@ class DifyBot(Bot):
                 logger.warning("[DIFY] Received empty response from Dify")
                 return None, "抱歉，我暂时无法回答您的问题，请稍后再试。"
 
-            logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: About to call parse_markdown_text (path 2)")
+            logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: About to call parse_markdown_text (chatbot blocking)")
             parsed_content = parse_markdown_text(answer)
-            logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: Parsed content (path 2): {parsed_content}")
+            logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: Parsed content (chatbot blocking): {parsed_content}")
+            logger.info("[DIFY] ✅ ChatBot blocking模式成功")
 
             # 处理多媒体内容
             return self._process_parsed_content(parsed_content, context, session, rsp_data)
 
     def _handle_agent_optimized(self, query: str, session: DifySession, context: Context):
-        """优化版本的agent处理，使用流式响应提升性能"""
+        """优化版本的agent处理，使用流式响应提升性能和媒体内容支持"""
+        logger.info("[DIFY] 🤖 Agent模式：使用streaming响应")
         api_key = self._get_dify_conf(context, "dify_api_key", '')
         api_base = self._get_dify_conf(context, "dify_api_base", "https://api.dify.ai/v1")
         chat_client = ChatClient(api_key, api_base)
@@ -997,7 +1097,8 @@ class DifyBot(Bot):
             logger.warning("[DIFY] Received empty streaming response from Dify")
             return None, "抱歉，我暂时无法回答您的问题，请稍后再试。"
 
-        # 处理流式响应
+        logger.info("[DIFY] ✅ Agent streaming模式成功")
+        # 处理流式响应（包含媒体内容解析）
         return self._process_streaming_messages(msgs, context, session, conversation_id)
 
     def _process_parsed_content(self, parsed_content, context: Context, session: DifySession, rsp_data: dict):
@@ -1054,14 +1155,30 @@ class DifyBot(Bot):
                 if channel:
                     self.executor.submit(channel.send, reply, context)
             elif msg['type'] == 'message_file':
-                url = self._fill_file_base_url(msg['content']['url'])
-                # 根据文件类型决定处理方式
-                if self._is_downloadable_file(url):
-                    # 图片和音频文件使用IMAGE_URL类型，会被下载
-                    reply = Reply(ReplyType.IMAGE_URL, url)
+                logger.info(f"[DIFY] 📁 处理非最终message_file: {msg}")
+
+                file_info = msg['content']
+                file_type = file_info.get('type', 'unknown')
+                file_url = self._fill_file_base_url(file_info['url'])
+
+                if file_type == 'image':
+                    # Agent生成的图片，直接下载并发送
+                    image = self._download_image(file_url)
+                    if image:
+                        reply = Reply(ReplyType.IMAGE, image)
+                    else:
+                        reply = Reply(ReplyType.TEXT, f"图片链接: {file_url}")
                 else:
-                    # 其他文件直接发送链接，不带括号
-                    reply = Reply(ReplyType.TEXT, url)
+                    # 其他类型文件
+                    if self._is_downloadable_file(file_url):
+                        file_path = self._download_file(file_url)
+                        if file_path:
+                            reply = Reply(ReplyType.FILE, file_path)
+                        else:
+                            reply = Reply(ReplyType.TEXT, f"文件链接: {file_url}")
+                    else:
+                        reply = Reply(ReplyType.TEXT, file_url)
+
                 if channel:
                     self.executor.submit(channel.send, reply, context)
 
