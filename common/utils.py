@@ -80,7 +80,7 @@ def remove_markdown_symbol(text: str):
 
 def parse_markdown_text(text: str):
     """
-    解析Markdown文本，提取文本、图片、文件等内容
+    解析Markdown文本和纯文本中的链接，提取文本、图片、文件等内容
     返回格式: [
         {'type': 'text', 'content': '文本内容'},
         {'type': 'image', 'content': '图片URL'},
@@ -91,35 +91,85 @@ def parse_markdown_text(text: str):
     if not text:
         return [{'type': 'text', 'content': ''}]
 
+    logger.info(f"[PARSE] 🔍 开始解析文本，长度: {len(text)}")
+    logger.debug(f"[PARSE] 输入文本: {repr(text[:200])}...")
+
     result = []
     remaining_text = text
 
     # 定义文件扩展名模式（用于识别文件链接）
     file_extensions = r'\.(pdf|doc|docx|xlsx?|pptx?|txt|html?|zip|rar|7z|tar|gz|csv|json|xml)(\?[^\)]*)?$'
 
-    # 提取图片 ![alt](url)
+    # 1. 提取markdown图片 ![alt](url)
     image_pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
     images = re.findall(image_pattern, remaining_text)
-    for alt, url in images:
-        result.append({'type': 'image', 'content': url})
-        # 从文本中移除已处理的图片
-        remaining_text = remaining_text.replace(f'![{alt}]({url})', '', 1)
+    if images:
+        logger.info(f"[PARSE] 📸 找到 {len(images)} 个markdown图片")
+        for alt, url in images:
+            result.append({'type': 'image', 'content': url})
+            logger.info(f"[PARSE] 提取markdown图片: {url}")
+            # 从文本中移除已处理的图片
+            remaining_text = remaining_text.replace(f'![{alt}]({url})', '', 1)
 
-    # 提取链接 [text](url)
+    # 2. 提取markdown链接 [text](url)
     link_pattern = r'\[([^\]]+)\]\(([^)]+)\)'
     links = re.findall(link_pattern, remaining_text)
-    for link_text, url in links:
-        # 检查是否为文件链接
-        if re.search(file_extensions, url, re.IGNORECASE):
-            result.append({'type': 'file', 'content': url})
-        else:
-            # 普通链接保留在文本中，但移除Markdown格式
-            remaining_text = remaining_text.replace(f'[{link_text}]({url})', link_text, 1)
-            continue
-        # 从文本中移除已处理的文件链接
-        remaining_text = remaining_text.replace(f'[{link_text}]({url})', '', 1)
+    if links:
+        logger.info(f"[PARSE] 🔗 找到 {len(links)} 个markdown链接")
+        for link_text, url in links:
+            # 检查是否为文件链接
+            if re.search(file_extensions, url, re.IGNORECASE):
+                result.append({'type': 'file', 'content': url})
+                logger.info(f"[PARSE] 提取markdown文件: {url}")
+                # 从文本中移除已处理的文件链接
+                remaining_text = remaining_text.replace(f'[{link_text}]({url})', '', 1)
+            else:
+                # 普通链接保留在文本中，但移除Markdown格式
+                remaining_text = remaining_text.replace(f'[{link_text}]({url})', link_text, 1)
 
-    # 处理剩余的文本内容
+    # 3. 如果没有找到markdown格式的媒体，查找纯文本中的链接
+    if not any(item['type'] in ['image', 'file'] for item in result):
+        logger.info("[PARSE] 🔍 没有找到markdown媒体，开始查找纯文本链接")
+
+        # 图片链接模式 (阿里云、腾讯云等)
+        image_url_patterns = [
+            r'https://mdn\.alipayobjects\.com/[^\s]+',  # 阿里云图片
+            r'https://[^/]*\.cos\.[^/]*\.myqcloud\.com/[^\s]+\.(?:jpg|jpeg|png|gif|webp)',  # 腾讯云图片
+            r'https://[^\s]+\.(?:jpg|jpeg|png|gif|webp|bmp)',  # 通用图片链接
+        ]
+
+        # 文件链接模式
+        file_url_patterns = [
+            r'https://[^/]*\.cos\.[^/]*\.myqcloud\.com/[^\s]+\.(?:docx?|pdf|xlsx?|pptx?)',  # 腾讯云文件
+            r'https://[^\s]+\.(?:docx?|pdf|xlsx?|pptx?|txt|zip|rar)',  # 通用文件链接
+        ]
+
+        # 查找图片链接
+        for pattern in image_url_patterns:
+            matches = re.findall(pattern, remaining_text)
+            if matches:
+                logger.info(f"[PARSE] 📸 找到 {len(matches)} 个纯文本图片链接")
+                for url in matches:
+                    result.append({'type': 'image', 'content': url})
+                    logger.info(f"[PARSE] 提取纯文本图片: {url}")
+                    # 从文本中移除链接
+                    remaining_text = remaining_text.replace(url, '', 1)
+                break  # 找到图片链接后就不再查找其他模式
+
+        # 如果没找到图片，查找文件链接
+        if not any(item['type'] == 'image' for item in result):
+            for pattern in file_url_patterns:
+                matches = re.findall(pattern, remaining_text)
+                if matches:
+                    logger.info(f"[PARSE] 📄 找到 {len(matches)} 个纯文本文件链接")
+                    for url in matches:
+                        result.append({'type': 'file', 'content': url})
+                        logger.info(f"[PARSE] 提取纯文本文件: {url}")
+                        # 从文本中移除链接
+                        remaining_text = remaining_text.replace(url, '', 1)
+                    break  # 找到文件链接后就不再查找其他模式
+
+    # 4. 处理剩余的文本内容
     if remaining_text.strip():
         # 移除其他Markdown格式
         clean_text = remaining_text
@@ -136,10 +186,16 @@ def parse_markdown_text(text: str):
 
         if clean_text.strip():
             result.insert(0, {'type': 'text', 'content': clean_text})
+            logger.info(f"[PARSE] 📝 保留文本内容，长度: {len(clean_text)}")
 
     # 如果没有任何内容，返回空文本
     if not result:
         result = [{'type': 'text', 'content': ''}]
+        logger.info("[PARSE] ⚠️  没有找到任何内容，返回空文本")
+
+    logger.info(f"[PARSE] ✅ 解析完成，共 {len(result)} 个项目")
+    for i, item in enumerate(result):
+        logger.info(f"[PARSE] 项目 {i+1}: {item['type']} - {item['content'][:100]}...")
 
     return result
 

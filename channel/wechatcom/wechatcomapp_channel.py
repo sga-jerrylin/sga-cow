@@ -139,20 +139,66 @@ class WechatComAppChannel(ChatChannel):
             logger.info("[wechatcom] sendImage url={}, receiver={}".format(img_url, receiver))
         elif reply.type == ReplyType.IMAGE:  # 从文件读取图片
             image_storage = reply.content
+            logger.info("[wechatcom] 🖼️  收到IMAGE类型回复，开始处理图片")
+            logger.info("[wechatcom] 📊 图片数据类型: {}, 大小: {} bytes".format(type(image_storage), fsize(image_storage)))
+
             sz = fsize(image_storage)
             if sz >= 10 * 1024 * 1024:
-                logger.info("[wechatcom] image too large, ready to compress, sz={}".format(sz))
+                logger.info("[wechatcom] ⚠️  图片过大，开始压缩: {} bytes".format(sz))
                 image_storage = compress_imgfile(image_storage, 10 * 1024 * 1024 - 1)
-                logger.info("[wechatcom] image compressed, sz={}".format(fsize(image_storage)))
-            image_storage.seek(0)
+                logger.info("[wechatcom] ✅ 图片压缩完成: {} bytes".format(fsize(image_storage)))
+
+            # 步骤2: 上传到企业微信临时素材库
+            logger.info("[wechatcom] 📤 步骤2: 开始上传到企业微信临时素材库...")
             try:
-                response = self.client.media.upload("image", image_storage)
-                logger.debug("[wechatcom] upload image response: {}".format(response))
-            except WeChatClientException as e:
-                logger.error("[wechatcom] upload image failed: {}".format(e))
+                media_id = self._upload_temp_media_from_bytesio(image_storage, "image")
+                logger.info("[wechatcom] ✅ 步骤2: 临时素材上传成功，media_id: {}".format(media_id))
+            except Exception as e:
+                logger.error("[wechatcom] ❌ 步骤2: 临时素材上传失败: {}".format(e))
+                logger.error("[wechatcom] 🔄 回退到发送错误提示")
+                self.client.message.send_text(self.agent_id, receiver, "图片上传失败，请稍后重试")
                 return
-            self.client.message.send_image(self.agent_id, receiver, response["media_id"])
-            logger.info("[wechatcom] sendImage, receiver={}".format(receiver))
+
+            # 步骤3: 发送图片消息
+            logger.info("[wechatcom] 📨 步骤3: 开始发送图片消息...")
+            try:
+                self.client.message.send_image(self.agent_id, receiver, media_id)
+                logger.info("[wechatcom] ✅ 步骤3: 图片消息发送成功! 接收者: {}".format(receiver))
+            except Exception as e:
+                logger.error("[wechatcom] ❌ 步骤3: 图片消息发送失败: {}".format(e))
+                self.client.message.send_text(self.agent_id, receiver, "图片发送失败，请稍后重试")
+
+        elif reply.type == ReplyType.FILE:  # 处理文件
+            file_path = reply.content
+            logger.info("[wechatcom] 📄 收到FILE类型回复，开始处理文件")
+            logger.info("[wechatcom] 📁 文件路径: {}".format(file_path))
+
+            try:
+                # 检查文件是否存在
+                if not os.path.exists(file_path):
+                    logger.error("[wechatcom] ❌ 文件不存在: {}".format(file_path))
+                    self.client.message.send_text(self.agent_id, receiver, "文件不存在，无法发送")
+                    return
+
+                file_size = os.path.getsize(file_path)
+                logger.info("[wechatcom] 📊 文件大小: {} bytes".format(file_size))
+
+                # 步骤2: 上传到企业微信临时素材库
+                logger.info("[wechatcom] 📤 步骤2: 开始上传文件到企业微信临时素材库...")
+                with open(file_path, 'rb') as f:
+                    file_data = io.BytesIO(f.read())
+                    filename = os.path.basename(file_path)
+                    media_id = self._upload_temp_media_from_bytesio(file_data, "file", filename)
+                    logger.info("[wechatcom] ✅ 步骤2: 文件临时素材上传成功，media_id: {}".format(media_id))
+
+                # 步骤3: 发送文件消息
+                logger.info("[wechatcom] 📨 步骤3: 开始发送文件消息...")
+                self.client.message.send_file(self.agent_id, receiver, media_id)
+                logger.info("[wechatcom] ✅ 步骤3: 文件消息发送成功! 接收者: {}".format(receiver))
+
+            except Exception as e:
+                logger.error("[wechatcom] ❌ 文件处理失败: {}".format(e))
+                self.client.message.send_text(self.agent_id, receiver, "文件发送失败，请稍后重试")
 
     def _send_texts_in_order(self, receiver, texts):
         """按顺序发送多条文本消息，确保不乱序"""
@@ -182,6 +228,78 @@ class WechatComAppChannel(ChatChannel):
         # 在新线程中执行发送，避免阻塞主线程
         thread = threading.Thread(target=send_worker, daemon=True)
         thread.start()
+
+    def _upload_temp_media_from_bytesio(self, file_data, file_type, filename=None):
+        """
+        从BytesIO对象上传临时素材到企业微信，获取media_id
+        参考您提供的app.py中的upload_temp_media方法
+        """
+        import requests
+        import mimetypes
+
+        logger.info("[wechatcom] 🚀 开始临时素材上传流程")
+
+        if filename is None:
+            if file_type == "image":
+                filename = "image.jpg"
+            elif file_type == "voice":
+                filename = "voice.amr"
+            else:
+                filename = "file.bin"
+
+        # 获取access_token
+        access_token = self.client.access_token
+        if not access_token:
+            logger.error("[wechatcom] ❌ access_token为空，无法上传")
+            raise Exception("access_token为空")
+
+        logger.info("[wechatcom] 🔑 access_token: {}...".format(access_token[:10]))
+
+        # 企业微信临时素材上传API
+        WX_BASE_URL = "https://qyapi.weixin.qq.com/cgi-bin"
+        url = f"{WX_BASE_URL}/media/upload?access_token={access_token}&type={file_type}"
+
+        # 自动识别文件MIME类型
+        mime_type, _ = mimetypes.guess_type(filename)
+        if mime_type is None:
+            mime_type = "application/octet-stream"
+
+        logger.info("[wechatcom] 📋 上传参数: type={}, filename={}, mime_type={}".format(file_type, filename, mime_type))
+        logger.info("[wechatcom] 🌐 API地址: {}".format(url))
+
+        # 确保BytesIO指针在开始位置
+        file_data.seek(0)
+        data_size = len(file_data.getvalue())
+        file_data.seek(0)  # 重置指针
+
+        logger.info("[wechatcom] 📊 文件数据大小: {} bytes".format(data_size))
+
+        # 准备multipart/form-data，字段名固定为"media"
+        files = {"media": (filename, file_data, mime_type)}
+
+        try:
+            logger.info("[wechatcom] 📤 发送HTTP请求到企业微信API...")
+            response = requests.post(url, files=files, timeout=30)
+            logger.info("[wechatcom] 📥 收到HTTP响应: status_code={}".format(response.status_code))
+
+            result = response.json()
+            logger.info("[wechatcom] 📋 API响应内容: {}".format(result))
+
+            if result.get("errcode") == 0:
+                media_id = result.get("media_id")
+                logger.info("[wechatcom] ✅ 临时素材上传成功! media_id: {}".format(media_id))
+                return media_id
+            else:
+                error_msg = f"企业微信API返回错误: errcode={result.get('errcode')}, errmsg={result.get('errmsg')}"
+                logger.error("[wechatcom] ❌ {}".format(error_msg))
+                raise Exception(error_msg)
+
+        except requests.exceptions.RequestException as e:
+            logger.error("[wechatcom] ❌ HTTP请求失败: {}".format(e))
+            raise Exception(f"HTTP请求失败: {e}")
+        except Exception as e:
+            logger.error("[wechatcom] ❌ 临时素材上传异常: {}".format(e))
+            raise
 
 
 class Query:

@@ -41,11 +41,30 @@ class DifyBot(Bot):
 
     def reply(self, query, context: Context=None):
         # acquire reply content
+        logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: reply() method called with query: {repr(query)}")
         if context.type == ContextType.TEXT or context.type == ContextType.IMAGE_CREATE:
             if context.type == ContextType.IMAGE_CREATE:
                 query = conf().get('image_create_prefix', ['画'])[0] + query
             logger.info("[DIFY] query={}".format(query))
             session_id = context["session_id"]
+
+            # 处理会话重置命令
+            clear_memory_commands = conf().get("clear_memory_commands", ["#清除记忆"])
+            if query in clear_memory_commands:
+                self.sessions.clear_session(session_id)
+                # 清除该用户的缓存
+                self._clear_user_cache(session_id)
+                return Reply(ReplyType.INFO, "会话已重置")
+            elif query == "#清除所有":
+                self.sessions.clear_all_session()
+                # 清除所有缓存
+                self.request_cache.clear()
+                return Reply(ReplyType.INFO, "所有会话已重置")
+            elif query == "#更新配置":
+                from config import load_config
+                load_config()
+                return Reply(ReplyType.INFO, "配置已更新")
+
             # TODO: 适配除微信以外的其他channel
             channel_type = conf().get("channel_type", "wx")
             user = None
@@ -79,7 +98,9 @@ class DifyBot(Bot):
 
 
 
+            logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: About to call _reply() method")
             reply, err = self._reply(query, session, context)
+            logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: _reply() returned: {reply}, error: {err}")
             if err != None:
                 dify_error_reply = conf().get("dify_error_reply", None)
                 error_msg = dify_error_reply if dify_error_reply else err
@@ -209,9 +230,10 @@ class DifyBot(Bot):
         logger.debug("[DIFY] usage {}".format(rsp_data.get('metadata', {}).get('usage', 0)))
 
         answer = rsp_data['answer']
-        logger.info(f"[DIFY] Raw answer from Dify: {repr(answer)}")
+        logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: Raw answer from Dify: {repr(answer)}")
+        logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: About to call parse_markdown_text")
         parsed_content = parse_markdown_text(answer)
-        logger.info(f"[DIFY] Parsed content: {parsed_content}")
+        logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: Parsed content: {parsed_content}")
 
         # {"answer": "![image](/files/tools/dbf9cd7c-2110-4383-9ba8-50d9fd1a4815.png?timestamp=1713970391&nonce=0d5badf2e39466042113a4ba9fd9bf83&sign=OVmdCxCEuEYwc9add3YNFFdUpn4VdFKgl84Cg54iLnU=)"}
         at_prefix = ""
@@ -284,29 +306,37 @@ class DifyBot(Bot):
         return final_reply, None
 
     def _is_downloadable_file(self, url):
-        """判断文件是否应该下载（图片和音频文件）"""
+        """判断文件是否应该下载（图片、音频和文档文件）"""
         try:
             parsed_url = urlparse(url)
             url_path = unquote(parsed_url.path).lower()
+
+            logger.info(f"[DIFY] 🔍 检查文件类型: {url}")
+            logger.info(f"[DIFY] 🔍 解析后的路径: {url_path}")
 
             # 支持下载的文件扩展名
             downloadable_extensions = {
                 # 图片格式
                 '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg',
                 # 音频格式
-                '.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.wma'
+                '.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.wma',
+                # 文档格式
+                '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt'
             }
 
             for ext in downloadable_extensions:
                 if url_path.endswith(ext):
+                    logger.info(f"[DIFY] ✅ 文件类型支持下载: {ext}")
                     return True
+
+            logger.info(f"[DIFY] ❌ 文件类型不支持下载，支持的扩展名: {downloadable_extensions}")
             return False
         except Exception as e:
             logger.error(f"[DIFY] Error checking file type for {url}: {e}")
             return False
 
     def _download_file(self, url):
-        """只下载图片和音频文件，其他文件返回None"""
+        """下载图片、音频和文档文件，其他文件返回None"""
         if not self._is_downloadable_file(url):
             logger.info(f"[DIFY] File type not supported for download: {url}")
             return None
@@ -839,6 +869,19 @@ class DifyBot(Bot):
         except Exception as e:
             logger.warning(f"[DIFY] Cache cleanup failed: {e}")
 
+    def _clear_user_cache(self, session_id: str):
+        """清除特定用户的缓存"""
+        try:
+            keys_to_remove = [
+                key for key in self.request_cache.keys()
+                if session_id in key
+            ]
+            for key in keys_to_remove:
+                del self.request_cache[key]
+            logger.info(f"[DIFY] Cleared {len(keys_to_remove)} cache entries for session: {session_id}")
+        except Exception as e:
+            logger.warning(f"[DIFY] Failed to clear user cache: {e}")
+
     def _handle_request_with_retry(self, dify_app_type: str, query: str, session: DifySession, context: Context):
         """带重试机制的请求处理"""
         last_error = None
@@ -915,7 +958,9 @@ class DifyBot(Bot):
                 logger.warning("[DIFY] Received empty response from Dify")
                 return None, "抱歉，我暂时无法回答您的问题，请稍后再试。"
 
+            logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: About to call parse_markdown_text (path 2)")
             parsed_content = parse_markdown_text(answer)
+            logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: Parsed content (path 2): {parsed_content}")
 
             # 处理多媒体内容
             return self._process_parsed_content(parsed_content, context, session, rsp_data)
@@ -957,6 +1002,9 @@ class DifyBot(Bot):
 
     def _process_parsed_content(self, parsed_content, context: Context, session: DifySession, rsp_data: dict):
         """处理解析后的内容"""
+        logger.info(f"[DIFY] _process_parsed_content called with {len(parsed_content) if parsed_content else 0} items")
+        logger.info(f"[DIFY] Parsed content items: {parsed_content}")
+
         if not parsed_content:
             return None, None
 
@@ -968,14 +1016,18 @@ class DifyBot(Bot):
 
         # 异步发送前面的消息
         for item in parsed_content[:-1]:
+            logger.info(f"[DIFY] Processing non-final item: {item}")
             reply = self._create_reply_from_item(item, at_prefix)
             if reply and channel:
+                logger.info(f"[DIFY] Sending non-final reply: {reply.type}")
                 # 使用线程池异步发送，提升性能
                 self.executor.submit(channel.send, reply, context)
 
         # 处理最后一条消息
         final_item = parsed_content[-1]
+        logger.info(f"[DIFY] Processing final item: {final_item}")
         final_reply = self._create_reply_from_item(final_item, at_prefix if is_group else "")
+        logger.info(f"[DIFY] Final reply created: {final_reply.type if final_reply else None}")
 
         # 设置conversation_id
         if session.get_conversation_id() == '':
@@ -1018,10 +1070,25 @@ class DifyBot(Bot):
         final_reply = None
         if final_msg['type'] == 'agent_message':
             content = final_msg['content']
-            if is_group:
-                at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
-                content = at_prefix + content
-            final_reply = Reply(ReplyType.TEXT, content)
+            logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: Processing final agent message: {repr(content)}")
+
+            # 解析markdown内容，查找图片和文件
+            logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: About to call parse_markdown_text (streaming path)")
+            parsed_content = parse_markdown_text(content)
+            logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: Parsed content (streaming path): {parsed_content}")
+
+            # 如果解析出了图片或文件，使用解析后的内容
+            if len(parsed_content) > 1 or (len(parsed_content) == 1 and parsed_content[0]['type'] != 'text'):
+                logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: Found media content, processing with _process_parsed_content")
+                # 创建模拟的rsp_data
+                rsp_data = {'conversation_id': conversation_id}
+                return self._process_parsed_content(parsed_content, context, session, rsp_data)
+            else:
+                # 没有媒体内容，按原来的方式处理
+                if is_group:
+                    at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
+                    content = at_prefix + content
+                final_reply = Reply(ReplyType.TEXT, content)
         elif final_msg['type'] == 'message_file':
             url = self._fill_file_base_url(final_msg['content']['url'])
             # 根据文件类型决定处理方式
@@ -1039,28 +1106,44 @@ class DifyBot(Bot):
 
     def _create_reply_from_item(self, item: dict, at_prefix: str = "") -> Optional[Reply]:
         """从解析项创建回复对象"""
-        logger.info(f"[DIFY] _create_reply_from_item called with item: {item}")
+        logger.info(f"[DIFY] 🔍 _create_reply_from_item - 处理项目: {item}")
+
         if item['type'] == 'text':
             content = at_prefix + item['content']
+            logger.info(f"[DIFY] ✅ 创建文本回复，长度: {len(content)}")
             return Reply(ReplyType.TEXT, content)
+
         elif item['type'] == 'image':
             image_url = self._fill_file_base_url(item['content'])
-            logger.info(f"[DIFY] Processing image item: {image_url}")
+            logger.info(f"[DIFY] 🖼️  开始处理图片: {image_url}")
+
+            # 步骤1: 下载图片
+            logger.info(f"[DIFY] 📥 步骤1: 开始下载图片...")
             image = self._download_image(image_url)
             if image:
-                logger.info(f"[DIFY] Image downloaded successfully, creating IMAGE reply")
+                logger.info(f"[DIFY] ✅ 步骤1: 图片下载成功，大小: {len(image.getvalue())} bytes")
+                logger.info(f"[DIFY] 🎯 创建IMAGE类型回复，将由企业微信channel处理上传")
                 return Reply(ReplyType.IMAGE, image)
             else:
-                logger.warning(f"[DIFY] Image download failed, falling back to text link: {image_url}")
-                return Reply(ReplyType.TEXT, image_url)  # 不带"图片链接："前缀，直接返回链接
+                logger.error(f"[DIFY] ❌ 步骤1: 图片下载失败，回退到文本链接")
+                return Reply(ReplyType.TEXT, f"图片链接: {image_url}")
+
         elif item['type'] == 'file':
             file_url = self._fill_file_base_url(item['content'])
+            logger.info(f"[DIFY] 📄 开始处理文件: {file_url}")
+
+            # 步骤1: 下载文件
+            logger.info(f"[DIFY] 📥 步骤1: 开始下载文件...")
             file_path = self._download_file(file_url)
             if file_path:
+                logger.info(f"[DIFY] ✅ 步骤1: 文件下载成功: {file_path}")
+                logger.info(f"[DIFY] 🎯 创建FILE类型回复，将由企业微信channel处理上传")
                 return Reply(ReplyType.FILE, file_path)
             else:
-                # 对于不支持下载的文件，直接返回链接，不带括号
-                return Reply(ReplyType.TEXT, file_url)
+                logger.error(f"[DIFY] ❌ 步骤1: 文件下载失败，回退到文本链接")
+                return Reply(ReplyType.TEXT, f"文件链接: {file_url}")
+
+        logger.warning(f"[DIFY] ⚠️  未知的项目类型: {item.get('type', 'Unknown')}")
         return None
 
     def _is_empty_response(self, response_data: Any) -> bool:
