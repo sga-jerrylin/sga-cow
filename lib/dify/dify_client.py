@@ -11,7 +11,7 @@ from common.log import logger
 class DifyClient:
     """Dify API客户端基类"""
 
-    def __init__(self, api_key: str, api_base: str = "https://api.dify.ai/v1"):
+    def __init__(self, api_key: str, api_base: str = "https://api.dify.ai/v1", timeout: int = 300):
         self.api_key = api_key
         self.api_base = api_base.rstrip('/')
         self.headers = {
@@ -34,8 +34,8 @@ class DifyClient:
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
 
-        # 设置默认超时
-        self.timeout = 30
+        # 设置可配置的超时时间
+        self.timeout = timeout
     
     def _send_request(self, method: str, endpoint: str, **kwargs) -> requests.Response:
         """发送HTTP请求，带重试和错误处理"""
@@ -152,8 +152,8 @@ class DifyClient:
 class ChatClient(DifyClient):
     """Dify聊天客户端"""
     
-    def __init__(self, api_key: str, api_base: str = "https://api.dify.ai/v1"):
-        super().__init__(api_key, api_base)
+    def __init__(self, api_key: str, api_base: str = "https://api.dify.ai/v1", timeout: int = 300):
+        super().__init__(api_key, api_base, timeout)
     
     def create_chat_message(
         self,

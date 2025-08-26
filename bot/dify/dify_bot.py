@@ -197,7 +197,8 @@ class DifyBot(Bot):
     def _handle_chatbot(self, query: str, session: DifySession, context: Context):
         api_key = self._get_dify_conf(context, "dify_api_key", '')
         api_base = self._get_dify_conf(context, "dify_api_base", "https://api.dify.ai/v1")
-        chat_client = ChatClient(api_key, api_base)
+        timeout = self._get_timeout_for_query(query, context)
+        chat_client = ChatClient(api_key, api_base, timeout)
         response_mode = 'blocking'
         payload = self._get_payload(query, session, response_mode)
         files = self._get_upload_files(session, context)
@@ -478,7 +479,8 @@ class DifyBot(Bot):
     def _handle_agent(self, query: str, session: DifySession, context: Context):
         api_key = self._get_dify_conf(context, "dify_api_key", '')
         api_base = self._get_dify_conf(context, "dify_api_base", "https://api.dify.ai/v1")
-        chat_client = ChatClient(api_key, api_base)
+        timeout = self._get_timeout_for_query(query, context)
+        chat_client = ChatClient(api_key, api_base, timeout)
         response_mode = 'streaming'
         current_query = query
         original_query = query  # 保存原始查询用于记录
@@ -793,6 +795,12 @@ class DifyBot(Bot):
                 self._append_agent_message(accumulated_agent_message, merged_message)
                 logger.debug("[DIFY] message_end usage: {}".format(event['metadata']['usage']))
                 break
+            elif event_name == 'node_finished':
+                # 工作流节点完成事件，记录但不处理
+                logger.debug("[DIFY] node_finished: {}".format(event.get('data', {}).get('node_type', 'unknown')))
+            elif event_name == 'workflow_finished':
+                # 工作流完成事件，记录但不处理
+                logger.debug("[DIFY] workflow_finished: status={}".format(event.get('data', {}).get('status', 'unknown')))
             else:
                 logger.warning("[DIFY] unknown event: {}".format(event))
 
@@ -887,45 +895,11 @@ class DifyBot(Bot):
             logger.warning(f"[DIFY] Failed to clear user cache: {e}")
 
     def _handle_request_with_retry(self, dify_app_type: str, query: str, session: DifySession, context: Context):
-        """带重试机制的请求处理"""
-        last_error = None
-
-        for attempt in range(self.retry_config['max_retries']):
-            try:
-                if dify_app_type == 'chatbot':
-                    return self._handle_chatbot_optimized(query, session, context)
-                elif dify_app_type == 'agent':
-                    return self._handle_agent_optimized(query, session, context)
-                elif dify_app_type == 'workflow':
-                    return self._handle_workflow(query, session, context)
-                else:
-                    friendly_error_msg = "[DIFY] 请检查 config.json 中的 dify_app_type 设置，目前仅支持 agent, chatbot, chatflow, workflow"
-                    return None, friendly_error_msg
-
-            except Exception as e:
-                last_error = e
-                logger.warning(f"[DIFY] Attempt {attempt + 1} failed: {e}")
-
-                if attempt < self.retry_config['max_retries'] - 1:
-                    # 指数退避
-                    delay = self.retry_config['retry_delay'] * (2 ** attempt)
-                    time.sleep(delay)
-                    continue
-                else:
-                    break
-
-        # 所有重试都失败了，给用户发送积极的等待消息，然后在后台重试
-        logger.warning(f"[DIFY] All {self.retry_config['max_retries']} attempts failed. Sending positive message and retrying...")
-
-        # 发送积极的等待消息给用户
-        self._send_thinking_message(context)
-
-        logger.info(f"[DIFY] 🤔 已发送'正在思考'消息，开始后台重试")
-
+        """简化的请求处理：避免重复请求Dify"""
         try:
-            # 等待一段时间让系统稳定
-            time.sleep(3)
+            logger.info(f"[DIFY] 开始处理请求")
 
+            # 直接调用处理方法，不进行自动重试
             if dify_app_type == 'chatbot':
                 result, error = self._handle_chatbot_optimized(query, session, context)
             elif dify_app_type == 'agent':
@@ -936,22 +910,29 @@ class DifyBot(Bot):
                 friendly_error_msg = "[DIFY] 请检查 config.json 中的 dify_app_type 设置，目前仅支持 agent, chatbot, chatflow, workflow"
                 return None, friendly_error_msg
 
-            if result:
-                logger.info(f"[DIFY] ✅ 后台重试成功！用户将收到正常回复")
+            # 成功获得结果
+            if result is not None:
+                logger.info(f"[DIFY] ✅ 请求处理成功")
                 return result, error
-            else:
-                logger.warning(f"[DIFY] ❌ 后台重试也失败了: {error}")
+
+            # 没有结果，但也不重试，避免重复请求
+            logger.warning(f"[DIFY] 请求完成但未获得结果: {error}")
+            return None, error or "处理完成但未获得结果"
 
         except Exception as e:
-            logger.error(f"[DIFY] 后台重试出现异常: {e}")
+            # 网络异常，不进行重试，避免重复请求Dify
+            error_str = str(e).lower()
 
-        # 真正的最终失败 - 返回积极的消息
-        error_info = f"[DIFY] All attempts failed. Last error: {last_error}"
-        logger.error(error_info)
-
-        # 返回积极正面的消息，不让用户感到系统有问题
-        positive_msg = "让我重新整理一下思路，稍后为您提供更准确的回答。您也可以尝试换个方式提问。"
-        return None, positive_msg
+            if "timeout" in error_str or "timed out" in error_str:
+                logger.warning(f"[DIFY] 网络超时，可能Dify已处理完成: {e}")
+                # 发送积极消息，告知用户可能需要等待
+                self._send_thinking_message(context)
+                return None, None
+            else:
+                logger.error(f"[DIFY] 网络异常: {e}")
+                # 发送积极消息
+                self._send_thinking_message(context)
+                return None, None
 
     def _send_thinking_message(self, context: Context):
         """发送积极的等待消息给用户"""
@@ -981,6 +962,8 @@ class DifyBot(Bot):
 
         except Exception as e:
             logger.warning(f"[DIFY] 发送等待消息失败: {e}")
+
+
 
     def _create_optimized_session(self):
         """创建优化的HTTP会话，提升连接稳定性"""
@@ -1012,8 +995,8 @@ class DifyBot(Bot):
         return session
 
     def _handle_chatbot_optimized(self, query: str, session: DifySession, context: Context):
-        """优化版本的chatbot处理，支持连接池、超时控制和媒体内容"""
-        logger.info("[DIFY] 🤖 ChatBot模式：使用blocking响应")
+        """优化版本的chatbot处理，使用streaming响应提升稳定性"""
+        logger.info("[DIFY] 🤖 ChatBot模式：使用streaming响应（提升稳定性）")
         api_key = self._get_dify_conf(context, "dify_api_key", '')
         api_base = self._get_dify_conf(context, "dify_api_base", "https://api.dify.ai/v1")
 
@@ -1025,8 +1008,9 @@ class DifyBot(Bot):
             })
             logger.info("[DIFY] 🔗 使用优化的连接池配置")
 
-            chat_client = ChatClient(api_key, api_base)
-            response_mode = 'blocking'
+            timeout = self._get_timeout_for_query(query, context)
+            chat_client = ChatClient(api_key, api_base, timeout)
+            response_mode = 'streaming'  # 改为streaming，提升稳定性
             payload = self._get_payload(query, session, response_mode)
             files = self._get_upload_files(session, context)
 
@@ -1046,30 +1030,25 @@ class DifyBot(Bot):
                 friendly_error_msg = self._handle_error_response(response.text, response.status_code)
                 return None, friendly_error_msg
 
-            rsp_data = response.json()
-            logger.debug("[DIFY] usage {}".format(rsp_data.get('metadata', {}).get('usage', 0)))
-
-            answer = rsp_data['answer']
+            # 使用streaming响应处理，与Agent模式相同
+            msgs, conversation_id = self._handle_sse_response(response)
 
             # 检查空回复
-            if not answer or answer.strip() == "":
-                logger.warning("[DIFY] Received empty response from Dify")
+            if not msgs:
+                logger.warning("[DIFY] Received empty streaming response from Dify")
                 return None, "抱歉，我暂时无法回答您的问题，请稍后再试。"
 
-            logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: About to call parse_markdown_text (chatbot blocking)")
-            parsed_content = parse_markdown_text(answer)
-            logger.info(f"[DIFY] 🚨🚨🚨 CRITICAL DEBUG: Parsed content (chatbot blocking): {parsed_content}")
-            logger.info("[DIFY] ✅ ChatBot blocking模式成功")
-
-            # 处理多媒体内容
-            return self._process_parsed_content(parsed_content, context, session, rsp_data)
+            logger.info("[DIFY] ✅ ChatBot streaming模式成功")
+            # 处理流式响应（包含媒体内容解析）
+            return self._process_streaming_messages(msgs, context, session, conversation_id)
 
     def _handle_agent_optimized(self, query: str, session: DifySession, context: Context):
         """优化版本的agent处理，使用流式响应提升性能和媒体内容支持"""
         logger.info("[DIFY] 🤖 Agent模式：使用streaming响应")
         api_key = self._get_dify_conf(context, "dify_api_key", '')
         api_base = self._get_dify_conf(context, "dify_api_base", "https://api.dify.ai/v1")
-        chat_client = ChatClient(api_key, api_base)
+        timeout = self._get_timeout_for_query(query, context)
+        chat_client = ChatClient(api_key, api_base, timeout)
         response_mode = 'streaming'
 
         payload = self._get_payload(query, session, response_mode)
