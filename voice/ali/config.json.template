@@ -1,4 +1,11 @@
 {
+    "use_qwen3_asr": false,
+    "qwen3_model": "qwen3-asr-flash",
+    "qwen3_language": null,
+    "qwen3_enable_lid": true,
+    "qwen3_enable_itn": false,
+    "qwen3_stream": false,
+    "dashscope_api_key": "",
     "api_url_text_to_voice": "https://nls-gateway-cn-shanghai.aliyuncs.com/stream/v1/tts",
     "api_url_voice_to_text": "https://nls-gateway.cn-shanghai.aliyuncs.com/stream/v1/asr",
     "app_key": "",

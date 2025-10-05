@@ -848,6 +848,12 @@ class DifyBot(Bot):
             if len(query) > 200:
                 return None
 
+            # 重置命令和管理命令不应该被缓存
+            clear_memory_commands = conf().get("clear_memory_commands", ["#清除记忆"])
+            management_commands = ["#清除所有", "#更新配置"]
+            if query in clear_memory_commands or query in management_commands:
+                return None
+
             key_parts = [
                 query,
                 session.get_user(),

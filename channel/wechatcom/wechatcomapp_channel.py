@@ -72,17 +72,39 @@ class WechatComAppChannel(ChatChannel):
         port = conf().get("wechatcomapp_port", 9898)
         web.httpserver.runsimple(app.wsgifunc(), ("0.0.0.0", port))
 
+    def _calculate_prefix_length(self, total_parts):
+        """计算分段编号前缀的字节长度"""
+        # 编号格式: "[1/3] " 或 "[99/99] "
+        prefix = f"[{total_parts}/{total_parts}] "
+        return len(prefix.encode("utf-8"))
+
     def send(self, reply: Reply, context: Context):
         receiver = context["receiver"]
         if reply.type in [ReplyType.TEXT, ReplyType.ERROR, ReplyType.INFO]:
             reply_text = remove_markdown_symbol(reply.content)
-            texts = split_string_by_utf8_length(reply_text, MAX_UTF8_LEN)
-            if len(texts) > 1:
-                logger.info("[wechatcom] text too long, split into {} parts".format(len(texts)))
+
+            # 先用原始长度预估分段数
+            temp_texts = split_string_by_utf8_length(reply_text, MAX_UTF8_LEN)
+
+            if len(temp_texts) > 1:
+                # 需要分段，计算编号前缀长度并重新分段
+                prefix_len = self._calculate_prefix_length(len(temp_texts))
+                adjusted_max_len = MAX_UTF8_LEN - prefix_len
+                texts = split_string_by_utf8_length(reply_text, adjusted_max_len)
+
+                # 如果重新分段后数量变化，再次调整
+                if len(texts) != len(temp_texts):
+                    prefix_len = self._calculate_prefix_length(len(texts))
+                    adjusted_max_len = MAX_UTF8_LEN - prefix_len
+                    texts = split_string_by_utf8_length(reply_text, adjusted_max_len)
+
+                logger.info("[wechatcom] text too long, split into {} parts, prefix_len={}, adjusted_max_len={}".format(
+                    len(texts), prefix_len, adjusted_max_len))
                 # 使用顺序发送机制
                 self._send_texts_in_order(receiver, texts)
             else:
-                self.client.message.send_text(self.agent_id, receiver, texts[0])
+                # 不需要分段，直接发送
+                self.client.message.send_text(self.agent_id, receiver, temp_texts[0])
             logger.info("[wechatcom] Do send text to {}: {}".format(receiver, reply_text))
         elif reply.type == ReplyType.VOICE:
             try:
