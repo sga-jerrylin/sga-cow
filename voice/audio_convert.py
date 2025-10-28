@@ -112,6 +112,37 @@ def sil_to_wav(silk_path, wav_path, rate: int = 24000):
         f.write(wav_data)
 
 
+def speex_to_wav(speex_path, wav_path, rate: int = 16000):
+    """
+    speex 文件转 wav（16K 采样率，适合语音识别）
+
+    企业微信高清语音使用 speex 格式，16K 采样率
+    相比普通语音（8K amr），音质更好，更适合语音识别
+
+    Args:
+        speex_path: speex 文件路径
+        wav_path: 输出的 wav 文件路径
+        rate: 采样率，默认 16000（企业微信高清语音的采样率）
+    """
+    try:
+        # 使用 pydub 读取 speex 文件（需要 ffmpeg 支持）
+        audio = AudioSegment.from_file(speex_path, format="speex")
+
+        # 设置采样率和声道
+        audio = audio.set_frame_rate(rate)
+        audio = audio.set_channels(1)  # 单声道
+
+        # 导出为 wav 格式
+        audio.export(wav_path, format="wav", codec='pcm_s16le')
+
+        logger.info(f"[audio_convert] Converted speex to wav: {speex_path} -> {wav_path}, rate={rate}")
+        return audio.duration_seconds * 1000
+
+    except Exception as e:
+        logger.error(f"[audio_convert] Failed to convert speex to wav: {e}")
+        raise
+
+
 def split_audio(file_path, max_segment_length_ms=60000):
     """
     分割音频文件

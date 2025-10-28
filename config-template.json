@@ -26,6 +26,11 @@
   "qwen3_enable_itn": false,
   "qwen3_stream": false,
   "dashscope_api_key": "",
+  "funasr_url": "ws://localhost:10095",
+  "funasr_model": "sensevoice",
+  "funasr_enable_itn": true,
+  "funasr_hotwords": "",
+  "funasr_audio_fs": 16000,
   "character_desc": "你是基于大语言模型的AI智能助手，旨在回答并解决人们的任何问题，并且可以使用多种语言与人交流。",
   "expires_in_seconds": 3600,
   "expire_note": "我是一个AI智能助手，如果你需要什么帮助，可以直接跟我说",
@@ -56,6 +61,7 @@
   "wechatcomapp_agent_id": "",
   "wechatcomapp_token": "",
   "wechatcomapp_aes_key": "",
+  "wechatcomapp_use_hd_voice": true,
   
   "web_port": 9899
 }

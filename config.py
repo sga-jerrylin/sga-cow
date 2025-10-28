@@ -115,6 +115,19 @@ available_setting = {
     # elevenlabs 语音api配置
     "xi_api_key": "",  # 获取ap的方法可以参考https://docs.elevenlabs.io/api-reference/quick-start/authentication
     "xi_voice_id": "",  # ElevenLabs提供了9种英式、美式等英语发音id，分别是“Adam/Antoni/Arnold/Bella/Domi/Elli/Josh/Rachel/Sam”
+    # 阿里云 Qwen3-ASR 语音识别配置
+    "use_qwen3_asr": False,  # 是否使用 Qwen3-ASR 模型
+    "qwen3_model": "qwen3-asr-flash",  # Qwen3-ASR 模型名称
+    "qwen3_language": None,  # 语言代码，None为自动检测
+    "qwen3_enable_lid": True,  # 是否启用语言识别
+    "qwen3_enable_itn": False,  # 是否启用逆文本归一化
+    "qwen3_stream": False,  # 是否使用流式识别
+    # FunASR 语音识别配置
+    "funasr_url": "ws://localhost:10095",  # FunASR 服务地址
+    "funasr_model": "sensevoice",  # FunASR 模型: sensevoice 或 paraformer
+    "funasr_enable_itn": True,  # 是否启用逆文本归一化
+    "funasr_hotwords": "",  # 热词，用空格分隔（仅 Paraformer 支持）
+    "funasr_audio_fs": 16000,  # 音频采样率
     # 服务时间限制，目前支持itchat
     "chat_time_module": False,  # 是否开启服务时间限制
     "chat_start_time": "00:00",  # 服务开始时间
@@ -142,6 +155,7 @@ available_setting = {
     "wechatcomapp_secret": "",  # 企业微信app的secret
     "wechatcomapp_agent_id": "",  # 企业微信app的agent_id
     "wechatcomapp_aes_key": "",  # 企业微信app的aes_key
+    "wechatcomapp_use_hd_voice": True,  # 是否使用高清语音（16K speex），False则使用普通语音（8K amr）
     # 飞书配置
     "feishu_port": 80,  # 飞书bot监听端口
     "feishu_app_id": "",  # 飞书机器人应用APP Id
@@ -149,10 +163,10 @@ available_setting = {
     "feishu_token": "",  # 飞书 verification token
     "feishu_bot_name": "",  # 飞书机器人的名字
     # 钉钉配置
-    "dingtalk_client_id": "",  # 钉钉机器人Client ID 
+    "dingtalk_client_id": "",  # 钉钉机器人Client ID
     "dingtalk_client_secret": "",  # 钉钉机器人Client Secret
     "dingtalk_card_enabled": False,
-    
+
     # chatgpt指令自定义触发词
     "clear_memory_commands": ["#清除记忆"],  # 重置会话指令，必须以#开头
     # channel配置

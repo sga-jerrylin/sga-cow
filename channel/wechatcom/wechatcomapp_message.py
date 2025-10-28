@@ -7,6 +7,14 @@ from bridge.context import ContextType
 from channel.chat_message import ChatMessage
 from common.log import logger
 from common.tmp_dir import TmpDir
+from config import conf
+
+try:
+    from voice.audio_convert import speex_to_wav
+    SPEEX_SUPPORT = True
+except ImportError as e:
+    logger.warning(f"[wechatcom] Speex conversion not available: {e}")
+    SPEEX_SUPPORT = False
 
 
 class WechatComAppMessage(ChatMessage):
@@ -21,18 +29,55 @@ class WechatComAppMessage(ChatMessage):
             self.content = msg.content
         elif msg.type == "voice":
             self.ctype = ContextType.VOICE
-            self.content = TmpDir().path() + msg.media_id + "." + msg.format  # content直接存临时目录路径
+            use_hd_voice = conf().get("wechatcomapp_use_hd_voice", True)
 
-            def download_voice():
-                # 如果响应状态码是200，则将响应内容写入本地文件
-                response = client.media.download(msg.media_id)
-                if response.status_code == 200:
-                    with open(self.content, "wb") as f:
-                        f.write(response.content)
-                else:
-                    logger.info(f"[wechatcom] Failed to download voice file, {response.content}")
+            # 根据配置决定使用高清语音还是普通语音
+            if use_hd_voice and SPEEX_SUPPORT:
+                # 使用高清语音（16K speex），最终转换为 wav
+                speex_file = TmpDir().path() + msg.media_id + ".speex"
+                wav_file = TmpDir().path() + msg.media_id + ".wav"
+                self.content = wav_file
 
-            self._prepare_fn = download_voice
+                def download_hd_voice():
+                    # 尝试下载高清语音
+                    response = client.download_hd_voice(msg.media_id)
+
+                    if response and response.status_code == 200:
+                        # 保存 speex 文件
+                        with open(speex_file, "wb") as f:
+                            f.write(response.content)
+                        logger.info(f"[wechatcom] Downloaded HD voice (speex): {speex_file}")
+
+                        # 转换为 wav
+                        try:
+                            speex_to_wav(speex_file, wav_file, rate=16000)
+                            logger.info(f"[wechatcom] Converted speex to wav: {wav_file}")
+
+                            # 删除临时 speex 文件
+                            try:
+                                os.remove(speex_file)
+                            except:
+                                pass
+
+                        except Exception as e:
+                            logger.error(f"[wechatcom] Failed to convert speex to wav: {e}")
+                            # 转换失败，回退到普通语音
+                            logger.info(f"[wechatcom] Falling back to normal voice download")
+                            self._download_normal_voice(client, msg)
+                    else:
+                        # 高清语音下载失败，回退到普通语音
+                        logger.info(f"[wechatcom] HD voice not available, falling back to normal voice")
+                        self._download_normal_voice(client, msg)
+
+                self._prepare_fn = download_hd_voice
+            else:
+                # 使用普通语音（8K amr）
+                self.content = TmpDir().path() + msg.media_id + "." + msg.format
+
+                def download_voice():
+                    self._download_normal_voice(client, msg)
+
+                self._prepare_fn = download_voice
         elif msg.type == "image":
             self.ctype = ContextType.IMAGE
             self.content = TmpDir().path() + msg.media_id + ".png"  # content直接存临时目录路径
@@ -74,6 +119,16 @@ class WechatComAppMessage(ChatMessage):
         self.from_user_id = msg.source
         self.to_user_id = msg.target
         self.other_user_id = msg.source
+
+    def _download_normal_voice(self, client, msg):
+        """下载普通语音（8K amr）"""
+        response = client.media.download(msg.media_id)
+        if response.status_code == 200:
+            with open(self.content, "wb") as f:
+                f.write(response.content)
+            logger.info(f"[wechatcom] Downloaded normal voice: {self.content}")
+        else:
+            logger.error(f"[wechatcom] Failed to download voice file, {response.content}")
 
     def _get_file_extension(self, msg):
         """根据消息获取文件扩展名"""
