@@ -57,6 +57,7 @@ class ChatChannel(Channel):
 
                 group_name_white_list = config.get("group_name_white_list", [])
                 group_name_keyword_white_list = config.get("group_name_keyword_white_list", [])
+                logger.info(f"[chat_channel] Group message - group_name={group_name}, group_id={group_id}, white_list={group_name_white_list}")
                 if any(
                     [
                         group_name in group_name_white_list,
@@ -74,7 +75,7 @@ class ChatChannel(Channel):
                     ):
                         session_id = group_id
                 else:
-                    logger.debug(f"No need reply, groupName not in whitelist, group_name={group_name}")
+                    logger.info(f"[chat_channel] No need reply, groupName not in whitelist, group_name={group_name}")
                     return None
                 context["session_id"] = session_id
                 context["receiver"] = group_id
@@ -84,6 +85,7 @@ class ChatChannel(Channel):
             e_context = PluginManager().emit_event(EventContext(Event.ON_RECEIVE_MESSAGE, {"channel": self, "context": context}))
             context = e_context["context"]
             if e_context.is_pass() or context is None:
+                logger.info(f"[chat_channel] Plugin returned - is_pass={e_context.is_pass()}, context is None={context is None}")
                 return context
             if cmsg.from_user_id == self.user_id and not config.get("trigger_by_self", True):
                 logger.debug("[chat_channel]self message skipped")
@@ -255,7 +257,9 @@ class ChatChannel(Channel):
                         reply = super().build_text_to_voice(reply.content)
                         return self._decorate_reply(context, reply)
                     if context.get("isgroup", False):
-                        if not context.get("no_need_at", False):
+                        no_need_at = context.get("no_need_at", False)
+                        logger.info(f"[chat_channel] Group reply - no_need_at={no_need_at}, actual_user_nickname={context['msg'].actual_user_nickname}")
+                        if not no_need_at:
                             reply_text = "@" + context["msg"].actual_user_nickname + "\n" + reply_text.strip()
                         reply_text = conf().get("group_chat_reply_prefix", "") + reply_text + conf().get("group_chat_reply_suffix", "")
                     else:

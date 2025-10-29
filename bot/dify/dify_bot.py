@@ -71,11 +71,21 @@ class DifyBot(Bot):
             user = None
             if channel_type in ["wx", "wework", "gewechat"]:
                 user = context["msg"].other_user_nickname if context.get("msg") else "default"
-            elif channel_type in ["wechatcom_app", "wechatmp", "wechatmp_service", "wechatcom_service", "web"]:
-                user = context["msg"].other_user_id if context.get("msg") else "default"
+            elif channel_type in ["wechatcom_app", "wechatcom_aibot", "wechatmp", "wechatmp_service", "wechatcom_service", "web"]:
+                # 对于群聊，使用群ID（保持上下文连续）；对于单聊，使用对方ID
+                msg = context.get("msg")
+                if msg:
+                    # 企业微信智能机器人群聊：使用群ID作为user，保持群内上下文连续
+                    # 其他场景：群聊使用实际发送者ID，单聊使用对方ID
+                    if channel_type == "wechatcom_aibot" and context.get("isgroup", False):
+                        user = msg.other_user_id  # 群ID
+                    else:
+                        user = msg.actual_user_id if context.get("isgroup", False) else msg.other_user_id
+                else:
+                    user = "default"
             else:
-                return Reply(ReplyType.ERROR, f"unsupported channel type: {channel_type}, now dify only support wx, wechatcom_app, wechatmp, wechatmp_service channel")
-            logger.debug(f"[DIFY] dify_user={user}")
+                return Reply(ReplyType.ERROR, f"unsupported channel type: {channel_type}, now dify only support wx, wechatcom_app, wechatcom_aibot, wechatmp, wechatmp_service channel")
+            logger.debug(f"[DIFY] dify_user={user}, isgroup={context.get('isgroup', False)}")
             user = user if user else "default" # 防止用户名为None，当被邀请进的群未设置群名称时用户名为None
             session = self.sessions.get_session(session_id, user)
             if context.get("isgroup", False):
@@ -244,9 +254,14 @@ class DifyBot(Bot):
         at_prefix = ""
         channel = context.get("channel")
         is_group = context.get("isgroup", False)
-        if is_group:
+        no_need_at = context.get("no_need_at", False)
+        if is_group and not no_need_at:
             at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
-        logger.info(f"[DIFY] Processing {len(parsed_content)} parsed items")
+        # 检查是否是企业微信智能机器人 channel
+        channel_type = conf().get("channel_type", "wx")
+        is_wechatcom_aibot = (channel_type == "wechatcom_aibot")
+
+        logger.info(f"[DIFY] Processing {len(parsed_content)} parsed items, channel_type={channel_type}")
         for item in parsed_content[:-1]:
             logger.info(f"[DIFY] Processing item: {item}")
             reply = None
@@ -265,12 +280,19 @@ class DifyBot(Bot):
                     reply = Reply(ReplyType.TEXT, image_url)  # 不带前缀，直接返回链接
             elif item['type'] == 'file':
                 file_url = self._fill_file_base_url(item['content'])
-                file_path = self._download_file(file_url)
-                if file_path:
-                    reply = Reply(ReplyType.FILE, file_path)
-                else:
-                    # 对于不支持下载的文件，直接返回链接，不带括号
+
+                # 企业微信智能机器人不支持发送文件，直接发送链接
+                if is_wechatcom_aibot:
+                    logger.info(f"[DIFY] wechatcom_aibot channel detected, sending file as URL: {file_url}")
                     reply = Reply(ReplyType.TEXT, file_url)
+                else:
+                    # 其他 channel 尝试下载文件
+                    file_path = self._download_file(file_url)
+                    if file_path:
+                        reply = Reply(ReplyType.FILE, file_path)
+                    else:
+                        # 对于不支持下载的文件，直接返回链接，不带括号
+                        reply = Reply(ReplyType.TEXT, file_url)
             logger.debug(f"[DIFY] reply={reply}")
             if reply and channel:
                 channel.send(reply, context)
@@ -281,7 +303,7 @@ class DifyBot(Bot):
         final_reply = None
         if final_item['type'] == 'text':
             content = final_item['content']
-            if is_group:
+            if is_group and not no_need_at:
                 at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
                 content = at_prefix + content
             final_reply = Reply(ReplyType.TEXT, content)
@@ -525,9 +547,10 @@ class DifyBot(Bot):
                 
                 channel = context.get("channel")
                 is_group = context.get("isgroup", False)
+                no_need_at = context.get("no_need_at", False)
                 for msg in msgs[:-1]:
                     if msg['type'] == 'agent_message':
-                        if is_group:
+                        if is_group and not no_need_at:
                             at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
                             msg['content'] = at_prefix + msg['content']
                         reply = Reply(ReplyType.TEXT, msg['content'])
@@ -547,7 +570,7 @@ class DifyBot(Bot):
                 reply = None
                 if final_msg['type'] == 'agent_message':
                     content = final_msg['content']
-                    if is_group:
+                    if is_group and not no_need_at:
                         at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
                         content = at_prefix + content
                     reply = Reply(ReplyType.TEXT, content)
@@ -957,7 +980,8 @@ class DifyBot(Bot):
                 import random
                 message = random.choice(thinking_messages)
 
-                if is_group:
+                no_need_at = context.get("no_need_at", False)
+                if is_group and not no_need_at:
                     at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
                     message = at_prefix + message
 
@@ -1096,8 +1120,9 @@ class DifyBot(Bot):
 
         channel = context.get("channel")
         is_group = context.get("isgroup", False)
+        no_need_at = context.get("no_need_at", False)
         at_prefix = ""
-        if is_group:
+        if is_group and not no_need_at:
             at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
 
         # 异步发送前面的消息
@@ -1112,7 +1137,7 @@ class DifyBot(Bot):
         # 处理最后一条消息
         final_item = parsed_content[-1]
         logger.info(f"[DIFY] Processing final item: {final_item}")
-        final_reply = self._create_reply_from_item(final_item, at_prefix if is_group else "")
+        final_reply = self._create_reply_from_item(final_item, at_prefix if (is_group and not no_need_at) else "")
         logger.info(f"[DIFY] Final reply created: {final_reply.type if final_reply else None}")
 
         # 设置conversation_id
@@ -1128,12 +1153,13 @@ class DifyBot(Bot):
 
         channel = context.get("channel")
         is_group = context.get("isgroup", False)
+        no_need_at = context.get("no_need_at", False)
 
         # 异步发送前面的消息
         for msg in msgs[:-1]:
             if msg['type'] == 'agent_message':
                 content = msg['content']
-                if is_group:
+                if is_group and not no_need_at:
                     at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
                     content = at_prefix + content
                 reply = Reply(ReplyType.TEXT, content)
@@ -1187,7 +1213,7 @@ class DifyBot(Bot):
                 return self._process_parsed_content(parsed_content, context, session, rsp_data)
             else:
                 # 没有媒体内容，按原来的方式处理
-                if is_group:
+                if is_group and not no_need_at:
                     at_prefix = "@" + context["msg"].actual_user_nickname + "\n"
                     content = at_prefix + content
                 final_reply = Reply(ReplyType.TEXT, content)
@@ -1234,6 +1260,16 @@ class DifyBot(Bot):
             file_url = self._fill_file_base_url(item['content'])
             logger.info(f"[DIFY] 📄 开始处理文件: {file_url}")
 
+            # 检查是否是企业微信智能机器人 channel
+            channel_type = conf().get("channel_type", "wx")
+            is_wechatcom_aibot = (channel_type == "wechatcom_aibot")
+
+            # 企业微信智能机器人不支持发送文件，直接发送链接
+            if is_wechatcom_aibot:
+                logger.info(f"[DIFY] wechatcom_aibot channel detected, sending file as URL: {file_url}")
+                return Reply(ReplyType.TEXT, file_url)
+
+            # 其他 channel 尝试下载文件
             # 步骤1: 下载文件
             logger.info(f"[DIFY] 📥 步骤1: 开始下载文件...")
             file_path = self._download_file(file_url)

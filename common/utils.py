@@ -140,8 +140,8 @@ def parse_markdown_text(text: str):
 
         # 文件链接模式
         file_url_patterns = [
-            r'https://[^/]*\.cos\.[^/]*\.myqcloud\.com/[^\s]+\.(?:docx?|pdf|xlsx?|pptx?)',  # 腾讯云文件
-            r'https://[^\s]+\.(?:docx?|pdf|xlsx?|pptx?|txt|zip|rar)',  # 通用文件链接
+            r'https://[^/\s]*\.cos\.[^/\s]*\.myqcloud\.com/[^\s\)]+\.(?:docx?|pdf|xlsx?|pptx?)',  # 腾讯云文件
+            r'https://[^\s\)]+\.(?:docx?|pdf|xlsx?|pptx?|txt|zip|rar)',  # 通用文件链接
         ]
 
         # 查找图片链接

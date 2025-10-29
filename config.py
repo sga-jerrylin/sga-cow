@@ -156,6 +156,11 @@ available_setting = {
     "wechatcomapp_agent_id": "",  # 企业微信app的agent_id
     "wechatcomapp_aes_key": "",  # 企业微信app的aes_key
     "wechatcomapp_use_hd_voice": True,  # 是否使用高清语音（16K speex），False则使用普通语音（8K amr）
+    # wechatcom_aibot 企业微信智能机器人配置
+    "wechatcom_aibot_token": "",  # 企业微信智能机器人的token
+    "wechatcom_aibot_aes_key": "",  # 企业微信智能机器人的aes_key（EncodingAESKey）
+    "wechatcom_aibot_port": 9899,  # 企业微信智能机器人的服务端口
+    "wechatcom_aibot_enable_stream": True,  # 是否启用流式消息回复
     # 飞书配置
     "feishu_port": 80,  # 飞书bot监听端口
     "feishu_app_id": "",  # 飞书机器人应用APP Id
@@ -170,8 +175,8 @@ available_setting = {
     # chatgpt指令自定义触发词
     "clear_memory_commands": ["#清除记忆"],  # 重置会话指令，必须以#开头
     # channel配置
-    "channel_type": "",  # 通道类型，支持：{wx,wxy,terminal,wechatmp,wechatmp_service,wechatcom_app,dingtalk}
-    "subscribe_msg": "",  # 订阅消息, 支持: wechatmp, wechatmp_service, wechatcom_app
+    "channel_type": "",  # 通道类型，支持：{wx,wxy,terminal,wechatmp,wechatmp_service,wechatcom_app,wechatcom_aibot,dingtalk}
+    "subscribe_msg": "",  # 订阅消息, 支持: wechatmp, wechatmp_service, wechatcom_app, wechatcom_aibot
     "debug": False,  # 是否开启debug模式，开启后会打印更多日志
     "appdata_dir": "",  # 数据目录
     # 插件配置

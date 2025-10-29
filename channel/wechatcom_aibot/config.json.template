@@ -1,0 +1,32 @@
+{
+  "channel_type": "wechatcom_aibot",
+
+  "# 企业微信智能机器人配置": "===================",
+  "wechatcom_corp_id": "你的企业ID",
+  "wechatcom_aibot_token": "回调Token",
+  "wechatcom_aibot_aes_key": "回调EncodingAESKey",
+  "wechatcom_aibot_port": 9899,
+  "wechatcom_aibot_enable_stream": true,
+  
+  "# Dify 配置": "===================",
+  "model": "dify",
+  "dify_api_base": "https://api.dify.ai/v1",
+  "dify_api_key": "your-dify-api-key",
+  "dify_app_type": "chatbot",
+  
+  "# 语音识别配置（可选）": "===================",
+  "speech_recognition": false,
+  "voice_to_text": "funasr",
+  "funasr_url": "ws://localhost:10095",
+  "funasr_model": "sensevoice",
+  
+  "# 其他配置": "===================",
+  "single_chat_prefix": [],
+  "single_chat_reply_prefix": "",
+  "group_chat_prefix": ["@bot"],
+  "group_name_white_list": ["ALL_GROUP"],
+  "image_create_prefix": ["画", "draw", "Draw"],
+  "conversation_max_tokens": 2500,
+  "character_desc": "你是一个智能助手，可以回答各种问题。"
+}
+
