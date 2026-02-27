@@ -15,11 +15,15 @@ import time
 
 from bridge.reply import Reply, ReplyType
 from common.log import logger
-from voice.audio_convert import get_pcm_from_wav
 from voice.voice import Voice
 from voice.ali.ali_api import AliyunTokenGenerator, speech_to_text_aliyun, text_to_speech_aliyun
 from voice.ali.qwen3_asr_api import speech_to_text_qwen3
 from config import conf
+
+try:
+    from voice.audio_convert import get_pcm_from_wav
+except ImportError as e:
+    logger.debug("import voice.audio_convert failed: {}".format(e))
 
 
 class AliVoice(Voice):

@@ -213,3 +213,22 @@ def print_red(text: str):
     print(f"{RED}{text}{RESET}")
 
     return text
+
+
+def expand_path(path: str) -> str:
+    """
+    Expand user path with robust Windows handling.
+    """
+    if not path:
+        return path
+
+    expanded = os.path.expanduser(path)
+    if expanded.startswith("~"):
+        home = os.environ.get("USERPROFILE") or os.environ.get("HOME")
+        if home:
+            if path == "~":
+                expanded = home
+            elif path.startswith("~/") or path.startswith("~\\"):
+                expanded = os.path.join(home, path[2:])
+
+    return expanded

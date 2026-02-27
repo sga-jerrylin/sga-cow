@@ -1,17 +1,30 @@
 {
-  "channel_type": "wechatcom_app",
-  "model": "dify",
-  "open_ai_api_key": "YOUR API KEY",
+  "channel_type": "web",
+  "model": "MiniMax-M2.5",
+  "open_ai_api_key": "",
   "open_ai_api_base": "https://api.openai.com/v1",
   "proxy": "",
+
+  "claude_api_key": "",
+  "claude_api_base": "https://api.anthropic.com/v1",
+  "gemini_api_key": "",
+  "gemini_api_base": "https://generativelanguage.googleapis.com",
+  "zhipu_ai_api_key": "",
+  "moonshot_api_key": "",
+  "dashscope_api_key": "",
+  "ark_api_key": "",
+  "minimax_api_key": "",
+
   "single_chat_prefix": ["bot", "@bot"],
   "single_chat_reply_prefix": "[bot] ",
   "group_chat_prefix": ["@bot"],
   "group_name_white_list": ["ALL_GROUP"],
   "group_chat_in_one_session": [],
+
   "image_create_prefix": ["画", "看", "找"],
   "conversation_max_tokens": 1000,
-  "speech_recognition": false,
+
+  "speech_recognition": true,
   "group_speech_recognition": false,
   "voice_reply_voice": false,
   "always_reply_voice": false,
@@ -19,32 +32,32 @@
   "text_to_voice": "openai",
   "text_to_voice_model": "tts-1",
   "tts_voice_id": "alloy",
+
   "use_qwen3_asr": false,
   "qwen3_model": "qwen3-asr-flash",
   "qwen3_language": null,
   "qwen3_enable_lid": true,
   "qwen3_enable_itn": false,
   "qwen3_stream": false,
-  "dashscope_api_key": "",
+
   "funasr_url": "ws://localhost:10095",
   "funasr_model": "sensevoice",
   "funasr_enable_itn": true,
   "funasr_hotwords": "",
   "funasr_audio_fs": 16000,
-  "character_desc": "你是基于大语言模型的AI智能助手，旨在回答并解决人们的任何问题，并且可以使用多种语言与人交流。",
+
+  "character_desc": "你是一个AI智能助手。",
   "expires_in_seconds": 3600,
-  "expire_note": "我是一个AI智能助手，如果你需要什么帮助，可以直接跟我说",
-  "use_global_plugin_config": true,
-  "max_media_send_count": 3,
-  "media_send_count": [],
-  "hot_reload": false,
+  "subscribe_msg": "",
+
   "debug": false,
   "appdata_dir": "",
-  "subscribe_msg": "感谢您的关注！\n这里是AI智能助手，可以自由对话。\n支持语音对话。\n支持图片输入。\n支持图片输出，画字开头的消息将按要求创作图片。\n支持tool、角色扮演和文字冒险等丰富的插件。\n输入{trigger_prefix}#help 查看详细指令。",
+  "hot_reload": false,
+
   "use_linkai": false,
   "linkai_api_key": "",
   "linkai_app_code": "",
-  
+
   "dify_api_key": "",
   "dify_api_base": "https://api.dify.ai/v1",
   "dify_app_type": "chatbot",
@@ -53,15 +66,27 @@
   "dify_retry_delay": 1.0,
   "dify_timeout": 30,
   "dify_conversation_max_messages": 5,
-  "dify_error_reply": "抱歉，我暂时遇到了一些问题，请您稍后重试~",
+  "dify_error_reply": "抱歉，我暂时遇到了一些问题，请稍后重试。",
   "image_recognition": false,
-  
+
+  "agent": true,
+  "agent_max_context_tokens": 40000,
+  "agent_max_context_turns": 20,
+  "agent_max_steps": 15,
+
+  "web_console": true,
+  "web_port": 9899,
+
   "wechatcom_corp_id": "",
   "wechatcomapp_secret": "",
   "wechatcomapp_agent_id": "",
   "wechatcomapp_token": "",
   "wechatcomapp_aes_key": "",
   "wechatcomapp_use_hd_voice": true,
-  
-  "web_port": 9899
+
+  "feishu_bot_name": "",
+  "feishu_app_id": "",
+  "feishu_app_secret": "",
+  "dingtalk_client_id": "",
+  "dingtalk_client_secret": ""
 }

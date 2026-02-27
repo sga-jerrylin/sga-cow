@@ -1,6 +1,7 @@
 # -*- coding=utf-8 -*-
 import io
 import os
+import sys
 import time
 import threading
 import queue
@@ -54,9 +55,9 @@ class WechatComAppChannel(ChatChannel):
         self.agent_id = conf().get("wechatcomapp_agent_id")
         self.token = conf().get("wechatcomapp_token")
         self.aes_key = conf().get("wechatcomapp_aes_key")
-        print(self.corp_id, self.secret, self.agent_id, self.token, self.aes_key)
+        self._http_server = None
         logger.info(
-            "[wechatcom] init: corp_id: {}, secret: {}, agent_id: {}, token: {}, aes_key: {}".format(self.corp_id, self.secret, self.agent_id, self.token, self.aes_key)
+            "[wechatcom] Initializing WeCom app channel, corp_id: {}, agent_id: {}".format(self.corp_id, self.agent_id)
         )
         self.crypto = WeChatCrypto(self.token, self.aes_key, self.corp_id)
         self.client = WechatComAppClient(self.corp_id, self.secret)
@@ -70,7 +71,28 @@ class WechatComAppChannel(ChatChannel):
         urls = ("/wxcomapp/?", "channel.wechatcom.wechatcomapp_channel.Query")
         app = web.application(urls, globals(), autoreload=False)
         port = conf().get("wechatcomapp_port", 9898)
-        web.httpserver.runsimple(app.wsgifunc(), ("0.0.0.0", port))
+        logger.info("[wechatcom] ✅ WeCom app channel started successfully")
+        logger.info("[wechatcom] 📡 Listening on http://0.0.0.0:{}/wxcomapp/".format(port))
+        logger.info("[wechatcom] 🤖 Ready to receive messages")
+        
+        # Build WSGI app with middleware (same as runsimple but without print)
+        func = web.httpserver.StaticMiddleware(app.wsgifunc())
+        func = web.httpserver.LogMiddleware(func)
+        server = web.httpserver.WSGIServer(("0.0.0.0", port), func)
+        self._http_server = server
+        try:
+            server.start()
+        except (KeyboardInterrupt, SystemExit):
+            server.stop()
+
+    def stop(self):
+        if self._http_server:
+            try:
+                self._http_server.stop()
+                logger.info("[wechatcom] HTTP server stopped")
+            except Exception as e:
+                logger.warning(f"[wechatcom] Error stopping HTTP server: {e}")
+            self._http_server = None
 
     def _calculate_prefix_length(self, total_parts):
         """计算分段编号前缀的字节长度"""
@@ -119,6 +141,10 @@ class WechatComAppChannel(ChatChannel):
                     response = self.client.media.upload("voice", open(path, "rb"))
                     logger.debug("[wechatcom] upload voice response: {}".format(response))
                     media_ids.append(response["media_id"])
+            except ImportError as e:
+                logger.error("[wechatcom] voice conversion failed: {}".format(e))
+                logger.error("[wechatcom] please install pydub: pip install pydub")
+                return
             except WeChatClientException as e:
                 logger.error("[wechatcom] upload voice failed: {}".format(e))
                 return

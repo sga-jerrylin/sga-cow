@@ -32,13 +32,13 @@ class AgentPlugin(Plugin):
         self.config = self._load_config()
         self.tool_manager = ToolManager()
         self.tool_manager.load_tools(config_dict=self.config.get("tools"))
-        logger.info("[agent] inited")
+        logger.debug("[agent] inited")
     
     def _load_config(self) -> Dict:
         """Load configuration from config.yaml file."""
         config_path = os.path.join(self.path, "config.yaml")
         if not os.path.exists(config_path):
-            logger.warning(f"Config file not found at {config_path}")
+            logger.debug(f"Config file not found at {config_path}")
             return {}
             
         with open(config_path, 'r', encoding='utf-8') as f:

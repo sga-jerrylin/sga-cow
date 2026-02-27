@@ -1,4 +1,4 @@
-from bot.bot_factory import create_bot
+from models.bot_factory import create_bot
 from bridge.context import Context
 from bridge.reply import Reply
 from common import const
@@ -23,7 +23,14 @@ class Bridge(object):
         if bot_type:
             self.btype["chat"] = bot_type
         else:
-            model_type = conf().get("model") or const.GPT35
+            model_type = conf().get("model") or const.GPT_41_MINI
+            
+            # Ensure model_type is string to prevent AttributeError when using startswith()
+            # This handles cases where numeric model names (e.g., "1") are parsed as integers from YAML
+            if not isinstance(model_type, str):
+                logger.warning(f"[Bridge] model_type is not a string: {model_type} (type: {type(model_type).__name__}), converting to string")
+                model_type = str(model_type)
+            
             if model_type in ["text-davinci-003"]:
                 self.btype["chat"] = const.OPEN_AI
             if conf().get("use_azure_chatgpt", False):
@@ -36,6 +43,9 @@ class Bridge(object):
                 self.btype["chat"] = const.QWEN
             if model_type in [const.QWEN_TURBO, const.QWEN_PLUS, const.QWEN_MAX]:
                 self.btype["chat"] = const.QWEN_DASHSCOPE
+            # Support Qwen3 and other DashScope models
+            if model_type and (model_type.startswith("qwen") or model_type.startswith("qwq") or model_type.startswith("qvq")):
+                self.btype["chat"] = const.QWEN_DASHSCOPE
             if model_type and model_type.startswith("gemini"):
                 self.btype["chat"] = const.GEMINI
             if model_type and model_type.startswith("glm"):
@@ -43,16 +53,18 @@ class Bridge(object):
             if model_type and model_type.startswith("claude"):
                 self.btype["chat"] = const.CLAUDEAPI
 
-            if model_type in ["claude"]:
-                self.btype["chat"] = const.CLAUDEAI
-
             if model_type in [const.MOONSHOT, "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]:
                 self.btype["chat"] = const.MOONSHOT
+            if model_type and model_type.startswith("kimi"):
+                self.btype["chat"] = const.MOONSHOT
+
+            if model_type and model_type.startswith("doubao"):
+                self.btype["chat"] = const.DOUBAO
 
             if model_type in [const.MODELSCOPE]:
                 self.btype["chat"] = const.MODELSCOPE
-
-            if model_type in ["abab6.5-chat"]:
+            # MiniMax models
+            if model_type and (model_type in ["abab6.5-chat", "abab6.5"] or model_type.lower().startswith("minimax")):
                 self.btype["chat"] = const.MiniMax
 
             # SGA-CoW: 添加Dify支持
@@ -68,6 +80,7 @@ class Bridge(object):
 
         self.bots = {}
         self.chat_bots = {}
+        self._agent_bridge = None
 
     # 模型对应的接口
     def get_bot(self, typename):
@@ -108,3 +121,29 @@ class Bridge(object):
         重置bot路由
         """
         self.__init__()
+
+    def get_agent_bridge(self):
+        """
+        Get agent bridge for agent-based conversations
+        """
+        if self._agent_bridge is None:
+            from bridge.agent_bridge import AgentBridge
+            self._agent_bridge = AgentBridge(self)
+        return self._agent_bridge
+
+    def fetch_agent_reply(self, query: str, context: Context = None,
+                          on_event=None, clear_history: bool = False) -> Reply:
+        """
+        Use super agent to handle the query
+
+        Args:
+            query: User query
+            context: Context object
+            on_event: Event callback for streaming
+            clear_history: Whether to clear conversation history
+
+        Returns:
+            Reply object
+        """
+        agent_bridge = self.get_agent_bridge()
+        return agent_bridge.agent_reply(query, context, on_event, clear_history)
