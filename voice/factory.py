@@ -58,4 +58,8 @@ def create_voice(voice_type):
         from voice.funasr.funasr_voice import FunASRVoice
 
         return FunASRVoice()
+    elif voice_type == "qwen3_asr":
+        from voice.qwen3_asr.qwen3_asr_voice import Qwen3AsrVoice
+
+        return Qwen3AsrVoice()
     raise RuntimeError

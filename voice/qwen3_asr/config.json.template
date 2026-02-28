@@ -1,0 +1,19 @@
+{
+  "qwen3_asr_api_base": "http://127.0.0.1:8001",
+  "qwen3_asr_api_path": "/v1/asr/transcribe",
+  "qwen3_asr_fallback_path": "/transcribe",
+  "qwen3_asr_health_path": "/healthz",
+  "qwen3_asr_timeout": 120,
+  "qwen3_asr_connect_timeout": 8,
+  "qwen3_asr_retries": 2,
+  "qwen3_asr_retry_backoff": 0.8,
+  "qwen3_asr_verify_ssl": true,
+  "qwen3_asr_healthcheck": true,
+  "qwen3_asr_healthcheck_interval": 30,
+  "qwen3_asr_audio_transport": "base64",
+  "qwen3_asr_language": null,
+  "qwen3_asr_context": "",
+  "qwen3_asr_return_time_stamps": false,
+  "qwen3_asr_auth_header": "Authorization",
+  "qwen3_asr_api_key": ""
+}

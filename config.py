@@ -102,7 +102,7 @@ available_setting = {
     "group_speech_recognition": False,  # 是否开启群组语音识别
     "voice_reply_voice": False,  # 是否使用语音回复语音，需要设置对应语音合成引擎的api key
     "always_reply_voice": False,  # 是否一直使用语音回复
-    "voice_to_text": "openai",  # 语音识别引擎，支持openai,baidu,google,azure,xunfei,ali
+    "voice_to_text": "openai",  # 语音识别引擎，支持openai,baidu,google,azure,xunfei,ali,funasr,qwen3_asr
     "text_to_voice": "openai",  # 语音合成引擎，支持openai,baidu,google,azure,xunfei,ali,pytts(offline),elevenlabs,edge(online)
     "text_to_voice_model": "tts-1",
     "tts_voice_id": "alloy",
@@ -125,6 +125,24 @@ available_setting = {
     "qwen3_enable_lid": True,  # 是否启用语言识别
     "qwen3_enable_itn": False,  # 是否启用逆文本归一化
     "qwen3_stream": False,  # 是否使用流式识别
+    # 本地/自建 Qwen3-ASR HTTP 服务配置（支持内网穿透地址）
+    "qwen3_asr_api_base": "http://127.0.0.1:8001",  # ASR 服务地址，如 https://xxx.xxx
+    "qwen3_asr_api_path": "/v1/asr/transcribe",  # 主识别接口
+    "qwen3_asr_fallback_path": "/transcribe",  # 降级识别接口
+    "qwen3_asr_health_path": "/healthz",  # 健康检查接口
+    "qwen3_asr_timeout": 120,  # 识别请求超时（秒）
+    "qwen3_asr_connect_timeout": 8,  # 连接超时（秒）
+    "qwen3_asr_retries": 2,  # 单接口重试次数
+    "qwen3_asr_retry_backoff": 0.8,  # 重试退避基数（秒）
+    "qwen3_asr_verify_ssl": True,  # 是否校验 HTTPS 证书
+    "qwen3_asr_healthcheck": True,  # 识别前是否做健康检查
+    "qwen3_asr_healthcheck_interval": 30,  # 健康检查缓存时长（秒）
+    "qwen3_asr_audio_transport": "base64",  # 音频传输方式: base64/path/data_url
+    "qwen3_asr_language": None,  # 可选固定语言，如 Chinese/English
+    "qwen3_asr_context": "",  # 传给 ASR 的上下文提示词
+    "qwen3_asr_return_time_stamps": False,  # 是否要求返回时间戳
+    "qwen3_asr_auth_header": "Authorization",  # 鉴权 header 名称
+    "qwen3_asr_api_key": "",  # 鉴权 token 或 api key
     # FunASR 语音识别配置
     "funasr_url": "ws://localhost:10095",  # FunASR 服务地址
     "funasr_model": "sensevoice",  # FunASR 模型: sensevoice 或 paraformer

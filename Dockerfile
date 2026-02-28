@@ -10,7 +10,8 @@ ENV PYTHONUNBUFFERED=1
 ENV TZ=Asia/Shanghai
 
 # 安装系统依赖
-RUN apt-get update && \
+RUN rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn*.list && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
     gcc \
     g++ \
@@ -39,7 +40,13 @@ COPY . .
 RUN mkdir -p logs tmp
 
 # 创建非root用户
-RUN useradd -m -u 1000 appuser && \
+RUN if ! id -u appuser >/dev/null 2>&1; then \
+      if getent passwd 1000 >/dev/null 2>&1; then \
+        useradd -m appuser; \
+      else \
+        useradd -m -u 1000 appuser; \
+      fi; \
+    fi && \
     chown -R appuser:appuser /app
 USER appuser
 
