@@ -76,5 +76,8 @@ def create_bot(bot_type):
     elif bot_type == const.DIFY:
         from bot.dify.dify_bot import DifyBot
         return DifyBot()
+    elif bot_type == const.MOLT:
+        from bot.molt.molt_bot import MoltBot
+        return MoltBot()
 
     raise RuntimeError

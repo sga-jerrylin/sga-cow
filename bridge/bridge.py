@@ -70,6 +70,8 @@ class Bridge(object):
             # SGA-CoW: 添加Dify支持
             if model_type in ["dify", const.DIFY]:
                 self.btype["chat"] = const.DIFY
+            if model_type in ["molt", const.MOLT]:
+                self.btype["chat"] = const.MOLT
 
             if conf().get("use_linkai") and conf().get("linkai_api_key"):
                 self.btype["chat"] = const.LINKAI

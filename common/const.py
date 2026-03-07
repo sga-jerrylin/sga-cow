@@ -10,6 +10,7 @@ CLAUDEAPI= "claudeAPI"  # 通过Claude api调用模型
 QWEN = "qwen"  # 旧版千问接入
 QWEN_DASHSCOPE = "dashscope"  # 新版千问接入(百炼)
 DIFY = "dify"  # Dify平台
+MOLT = "molt"
 GEMINI = "gemini"
 ZHIPU_AI = "glm-4"
 MOONSHOT = "moonshot"
