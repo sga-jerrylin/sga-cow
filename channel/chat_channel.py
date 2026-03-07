@@ -205,6 +205,9 @@ class ChatChannel(Channel):
             if context.type == ContextType.TEXT or context.type == ContextType.IMAGE_CREATE:  # 文字和图片消息
                 context["channel"] = e_context["channel"]
                 reply = super().build_reply_content(context.content, context)
+            elif context.type in (ContextType.VOICE, ContextType.IMAGE, ContextType.FILE) and self._should_forward_to_molt():
+                context["channel"] = e_context["channel"]
+                reply = super().build_reply_content("", context)
             elif context.type == ContextType.VOICE:  # 语音消息
                 cmsg = context["msg"]
                 cmsg.prepare()
@@ -302,6 +305,7 @@ class ChatChannel(Channel):
                 # 如果是文本回复，尝试提取并发送图片
                 if reply.type == ReplyType.TEXT:
                     self._extract_and_send_images(reply, context)
+                    self._send_post_reply_attachments(reply, context)
                 # 如果是图片回复但带有文本内容，先发文本再发图片
                 elif reply.type == ReplyType.IMAGE_URL and hasattr(reply, 'text_content') and reply.text_content:
                     # 先发送文本
@@ -310,8 +314,29 @@ class ChatChannel(Channel):
                     # 短暂延迟后发送图片
                     time.sleep(0.3)
                     self._send(reply, context)
+                    self._send_post_reply_attachments(reply, context)
                 else:
                     self._send(reply, context)
+                    self._send_post_reply_attachments(reply, context)
+
+    def _should_forward_to_molt(self):
+        try:
+            from bridge.bridge import Bridge
+            from common import const
+
+            return Bridge().get_bot_type("chat") == const.MOLT
+        except Exception:
+            return False
+
+    def _send_post_reply_attachments(self, reply: Reply, context: Context):
+        try:
+            from bridge.bridge import Bridge
+
+            bot = Bridge().get_bot("chat")
+            if hasattr(bot, "send_pending_attachments"):
+                bot.send_pending_attachments(reply, context, self)
+        except Exception as e:
+            logger.debug(f"[Channel] send_pending_attachments skipped: {e}")
     
     def _extract_and_send_images(self, reply: Reply, context: Context):
         """
