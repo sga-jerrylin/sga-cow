@@ -242,6 +242,12 @@ available_setting = {
     "dify_image_timeout": 180,             # 图片生成任务超时时间（秒）
     "dify_conversation_max_messages": 5,   # 会话最大消息数
     "dify_error_reply": "抱歉，我暂时遇到了一些问题，请您稍后重试~",  # 错误回复消息
+    "molt_api_base": "http://localhost:3000",  # Molt API基础URL
+    "molt_api_key": "",                   # Molt API密钥
+    "molt_agent_id": "main",             # Molt agent ID
+    "molt_response_mode": "blocking",    # Molt响应模式: blocking, streaming
+    "molt_timeout": 300,                  # Molt请求超时时间（秒）
+    "molt_session_expires": 0,            # Molt会话过期时间，0为不过期
 
     # 图像识别配置
     "image_recognition": False,            # 是否开启图像识别

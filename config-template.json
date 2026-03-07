@@ -83,6 +83,12 @@
   "dify_timeout": 30,
   "dify_conversation_max_messages": 5,
   "dify_error_reply": "抱歉，我暂时遇到了一些问题，请稍后重试。",
+  "molt_api_base": "https://molt.mycompany.com",
+  "molt_api_key": "sk-molt-xxx",
+  "molt_agent_id": "main",
+  "molt_response_mode": "blocking",
+  "molt_timeout": 300,
+  "molt_session_expires": 0,
   "image_recognition": false,
 
   "agent": true,
