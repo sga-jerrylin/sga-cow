@@ -261,15 +261,12 @@ class MoltBot(Bot):
         attachment_type = payload.get("type", "file")
         filename = payload.get("filename") or self._guess_filename(url, attachment_type)
 
-        if attachment_type == "image":
-            image_storage = self._download_image(url, filename)
-            if image_storage is None:
-                return None
-            return Reply(ReplyType.IMAGE, image_storage)
-
         local_path = self._download_to_tmp(url, filename)
         if not local_path:
             return None
+
+        if attachment_type == "image":
+            return Reply(ReplyType.IMAGE, local_path)
 
         reply_type = {
             "audio": ReplyType.VOICE,
@@ -277,42 +274,6 @@ class MoltBot(Bot):
             "video": ReplyType.FILE,
         }.get(attachment_type, ReplyType.FILE)
         return Reply(reply_type, local_path)
-
-    def _download_image(self, url: str, filename: str):
-        response = None
-        try:
-            headers = {}
-            if url.startswith(self.client.base_url):
-                headers["Authorization"] = f"Bearer {self.client.api_key}"
-            response = self.client.session.get(
-                url,
-                headers=headers,
-                timeout=30,
-                stream=True,
-            )
-            response.raise_for_status()
-
-            max_size = 50 * 1024 * 1024
-            image_storage = io.BytesIO()
-            downloaded = 0
-            for chunk in response.iter_content(chunk_size=8192):
-                if not chunk:
-                    continue
-                downloaded += len(chunk)
-                if downloaded > max_size:
-                    logger.warning(f"[Molt] image too large: {filename}")
-                    return None
-                image_storage.write(chunk)
-
-            image_storage.seek(0)
-            image_storage.name = filename
-            return image_storage
-        except Exception as err:
-            logger.warning(f"[Molt] image download failed: {err}")
-            return None
-        finally:
-            if response is not None:
-                response.close()
 
     def _download_to_tmp(self, url: str, filename: str):
         response = None
