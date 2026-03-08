@@ -1,7 +1,5 @@
-import io
 import json
 import os
-import re
 import tempfile
 import time
 import uuid
@@ -21,14 +19,6 @@ from models.bot import Bot
 
 class MoltBot(Bot):
     """SGA-Molt External Agent API bot."""
-
-    _QUERY_ATTACHMENT_PATTERNS = [
-        (re.compile(r"\[图片:\s*([^\]]+)\]"), "image"),
-        (re.compile(r"\[文件:\s*([^\]]+)\]"), "file"),
-        (re.compile(r"\[视频:\s*([^\]]+)\]"), "file"),
-        (re.compile(r"\[语音:\s*([^\]]+)\]"), "audio"),
-        (re.compile(r"\[音频:\s*([^\]]+)\]"), "audio"),
-    ]
 
     def __init__(self):
         super().__init__()
@@ -71,9 +61,8 @@ class MoltBot(Bot):
 
     def _build_request(self, query: str, context: Context, session) -> tuple[str, list]:
         if context.type == ContextType.TEXT:
-            message, attachments = self._extract_query_attachments(query)
-            attachments.extend(self._build_cached_attachments(session.session_id))
-            return message, attachments
+            attachments = self._build_cached_attachments(session.session_id)
+            return query, attachments
 
         attachment = self._build_context_attachment(context)
         return "", [attachment] if attachment else []
@@ -103,23 +92,6 @@ class MoltBot(Bot):
             "name": user_name,
             "extra": extra,
         }
-
-    def _extract_query_attachments(self, query: str) -> tuple[str, list]:
-        attachments = []
-        cleaned_query = query or ""
-
-        for pattern, attachment_type in self._QUERY_ATTACHMENT_PATTERNS:
-            matches = pattern.findall(cleaned_query)
-            if not matches:
-                continue
-            cleaned_query = pattern.sub("", cleaned_query)
-            for raw_path in matches:
-                attachment = self._upload_attachment(raw_path.strip(), attachment_type)
-                if attachment:
-                    attachments.append(attachment)
-
-        cleaned_query = re.sub(r"\n{3,}", "\n\n", cleaned_query).strip()
-        return cleaned_query, attachments
 
     def _build_cached_attachments(self, session_id: str) -> list:
         img_cache = memory.USER_IMAGE_CACHE.get(session_id)
