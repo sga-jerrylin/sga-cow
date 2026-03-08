@@ -11,6 +11,7 @@ from bot.molt.molt_session import MoltSessionManager
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from common import memory
+from common.expired_dict import ExpiredDict
 from common.log import logger
 from config import conf
 from lib.molt.molt_client import MoltClient
@@ -30,7 +31,7 @@ class MoltBot(Bot):
         )
         self.sessions = MoltSessionManager()
         self.response_mode = conf().get("molt_response_mode", "blocking")
-        self._pending_map = {}
+        self._pending_map = ExpiredDict(300)
 
     def reply(self, query: str, context: Context = None) -> Reply:
         if context is None or context.type not in (ContextType.TEXT, ContextType.IMAGE, ContextType.FILE, ContextType.VOICE):
