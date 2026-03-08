@@ -280,9 +280,12 @@ class MoltBot(Bot):
     def _download_image(self, url: str, filename: str):
         response = None
         try:
+            headers = {}
+            if url.startswith(self.client.base_url):
+                headers["Authorization"] = f"Bearer {self.client.api_key}"
             response = self.client.session.get(
                 url,
-                headers={"Authorization": f"Bearer {self.client.api_key}"},
+                headers=headers,
                 timeout=30,
                 stream=True,
             )
@@ -313,9 +316,12 @@ class MoltBot(Bot):
     def _download_to_tmp(self, url: str, filename: str):
         response = None
         try:
+            headers = {}
+            if url.startswith(self.client.base_url):
+                headers["Authorization"] = f"Bearer {self.client.api_key}"
             response = self.client.session.get(
                 url,
-                headers={"Authorization": f"Bearer {self.client.api_key}"},
+                headers=headers,
                 timeout=30,
                 stream=True,
             )
