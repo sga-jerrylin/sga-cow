@@ -53,7 +53,7 @@ class MoltBot(Bot):
             return self._reply_blocking(message, user, session, attachments)
         except requests.HTTPError as err:
             if err.response is not None and err.response.status_code == 409:
-                return Reply(ReplyType.TEXT, "The previous message is still being processed. Please wait a moment.")
+                return Reply(ReplyType.TEXT, "正在处理上一条消息，请稍候...")
             logger.error(f"[Molt] HTTP error: {err}")
             return Reply(ReplyType.ERROR, f"Molt service error: {err}")
         except Exception as err:
